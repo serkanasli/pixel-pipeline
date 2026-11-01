@@ -1,0 +1,20 @@
+{
+  "id": "pet.shadow-wolf",
+  "name": { "en": "Shadow Wolf", "tr": "Gölge Kurdu" },
+  "type": "pet",
+  "facing": "left",
+  "pixelWidth": 172,
+  "ptPerPixel": 1,
+  "colors": 24,
+  "poses": [
+    { "name": "walk", "kind": "locomotion", "video": "videos/pixel-wolf-walk-360p-1.mp4", "fps": 12 },
+    { "name": "curl_up", "kind": "transition", "video": "videos/pixel-wolf-curl-up-360p-1.mp4", "fps": 12 },
+    { "name": "tail_wag", "kind": "reaction", "video": "videos/pixel-wolf-tail-wag-360p-1.mp4", "fps": 12, "startsFrom": "curl_up" },
+    { "name": "sleep", "kind": "still", "from": "tail_wag", "frame": "first" }
+  ],
+  "behavior": {
+    "enter": "walk",
+    "arrive": ["curl_up", "sleep"],
+    "onPress": "tail_wag"
+  }
+}

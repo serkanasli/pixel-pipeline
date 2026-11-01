@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__ · önizleme</title>
+<style>
+/* One stage (scene + item), controls under it, measured facts and warnings at the bottom. */
+:root {
+  --bg: #eef0f3; --panel: #ffffff; --fg: #1b2029; --muted: #5d6675; --line: #d5dae2;
+  --accent: #c8642a; --accent-fg: #ffffff; --warn: #a8461a;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f131a; --panel: #171c25; --fg: #e3e7ee; --muted: #9099a8; --line: #2a313d; --accent: #e08048; --accent-fg: #14100c; --warn: #f0a070; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--font); padding: 16px; }
+.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-size: 1.25rem; margin: 0; }
+.sub { color: var(--muted); margin: 2px 0 0; font: 12px var(--mono); }
+.stage { position: relative; border-radius: 10px; overflow: hidden; background: #0b0f18; }
+canvas { display: block; width: 100%; cursor: pointer; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+button, select { font: 500 13px var(--font); padding: 7px 12px; border-radius: 7px; cursor: pointer; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+label { display: flex; align-items: center; gap: 6px; }
+input[type="range"] { accent-color: var(--accent); width: 120px; }
+.val { font: 12px var(--mono); min-width: 4ch; }
+.k { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.facts div { display: grid; }
+.v { font: 13px var(--mono); }
+.warn { color: var(--warn); }
+ul { margin: 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title"></h1>
+    <p class="sub" id="subtitle"></p>
+  </header>
+  <div class="stage"><canvas id="c" aria-label="Sahne: dinlenirken öğeye dokunmak tepkiyi oynatır"></canvas></div>
+  <section class="panel" aria-label="Kontroller">
+    <div class="row" id="flow"></div>
+    <div class="row" id="poses"></div>
+    <div class="row">
+      <button id="pause">Duraklat</button>
+      <button id="step" disabled>Kare ilerlet</button>
+      <label>Büyütme <select id="zoom"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select></label>
+      <label>Hız <input type="range" id="speed" min="0.25" max="2" step="0.05" value="1"><span class="val" id="speedVal">1.00×</span></label>
+      <label><input type="checkbox" id="guides" checked> Zemin çizgileri</label>
+    </div>
+    <div class="facts" id="facts"></div>
+  </section>
+  <section class="panel" id="warnBox" hidden><span class="k">Uyarılar</span><ul id="warnings" class="warn"></ul></section>
+</div>
+<script>
+(() => {
+  const DATA = /*__DATA__*/null;
+  const M = DATA.manifest, A = DATA.atlas, S = A.meta.scale; // S: atlas px per pt
+  const PP = 1 / S; // pt per art pixel
+  const CW = A.meta.sourceSize.w / S, CH = A.meta.sourceSize.h / S; // canvas in pt
+  const poses = M.poses, loco = M.locomotion, restPose = M.arrive.at(-1)?.pose;
+  const press = M.onPress.find((a) => a.pose);
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('c'), ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.src = DATA.image;
+
+  $('title').textContent = M.name?.tr ?? M.name?.en ?? M.id;
+  $('subtitle').textContent = `${M.id} · ${M.type} · ${M.size.width}×${M.size.height} pt · 1 sanat pikseli = ${PP} pt`;
+
+  const G = { paused: false, speed: 1, zoom: 2, guides: true };
+  const st = { mode: 'idle', pose: restPose ?? Object.keys(poses)[0], t: 0, x: 0, dist: 0, queue: [], returnTo: null, frame: null };
+
+  // ---------- state machine: enter -> arrive -> rest, onPress returns to rest ----------
+  function playQueue(list, then) { st.queue = [...list]; st.after = then; nextInQueue(); }
+  function nextInQueue() {
+    const p = st.queue.shift();
+    if (!p) { st.mode = st.after ?? 'rest'; if (st.mode === 'rest' && restPose) setPose(restPose); return; }
+    st.mode = 'seq'; setPose(p);
+  }
+  function setPose(p) { st.pose = p; st.t = 0; st.frame = poses[p].frames[0]; }
+  function enter() { st.x = W / G.zoom + CW; st.dist = 0; st.mode = 'walk'; setPose(loco.pose); }
+  function arrive() { st.x = slotX(); playQueue(M.arrive.map((a) => a.pose), 'rest'); }
+  function tap() { if (press && (st.mode === 'rest' || st.mode === 'loopRest')) { st.returnTo = press.returnTo ?? restPose; playQueue([press.pose], 'return'); } }
+  function playPose(p) { st.x = slotX(); if (poses[p].loop) { st.mode = 'loopRest'; setPose(p); } else playQueue([p], 'rest'); }
+
+  function update(dt) {
+    const pose = poses[st.pose], n = pose.frames.length, fps = pose.fps ?? 12;
+    if (st.mode === 'walk') {
+      const v = loco.speed * G.speed, move = v * dt / 1000;
+      st.x -= move; st.dist += move;
+      st.frame = pose.frames[Math.floor((st.dist / loco.strideLength) * n) % n];
+      if (st.x <= slotX()) { st.x = slotX(); M.arrive.length ? playQueue(M.arrive.map((a) => a.pose), 'rest') : (st.mode = 'rest'); }
+      return;
+    }
+    st.t += dt * G.speed;
+    const i = Math.floor(st.t * fps / 1000);
+    if (pose.loop) { st.frame = pose.frames[i % n]; return; }
+    if (i < n) { st.frame = pose.frames[i]; return; }
+    st.frame = pose.frames[n - 1];
+    if (st.mode === 'seq') {
+      if (st.queue.length) nextInQueue();
+      else if (st.after === 'return') { st.mode = 'rest'; setPose(st.returnTo); }
+      else { st.mode = 'rest'; if (!poses[st.pose].loop && restPose && st.pose !== restPose && !M.arrive.some((a) => a.pose === st.pose)) setPose(restPose); }
+    }
+  }
+
+  // ---------- drawing ----------
+  let W = 0, H = 0, dpr = 1;
+  const slotX = () => Math.round(W / G.zoom * 0.42);
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = canvas.parentElement.clientWidth;
+    H = Math.round(Math.max(220, (CH + 60) * G.zoom));
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); canvas.style.height = H + 'px';
+  }
+  function render(now) {
+    const z = G.zoom, gy = Math.round((H / z) * 0.82), w = W / z, h = H / z;
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    const g = ctx.createLinearGradient(0, 0, 0, gy); g.addColorStop(0, '#0a0e19'); g.addColorStop(1, '#18203a');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, gy);
+    ctx.fillStyle = '#121725'; ctx.fillRect(0, gy, w, h - gy);
+    ctx.fillStyle = '#1d2436'; ctx.fillRect(0, gy, w, 1);
+    if (G.guides) {
+      ctx.fillStyle = 'rgba(160,175,205,0.55)';
+      for (let x = 0; x < w; x += 8) ctx.fillRect(x, gy + 2, 1, x % 40 === 0 ? 7 : 3);
+    }
+    const f = A.frames[st.frame];
+    if (f && img.complete) {
+      let ox = st.x - M.anchor.x * CW, oy = gy - M.anchor.y * CH;
+      ox = Math.round(ox / PP) * PP; oy = Math.round(oy / PP) * PP; // snap to the art-pixel grid
+      ctx.fillStyle = 'rgba(5,7,12,0.45)';
+      ctx.beginPath(); ctx.ellipse(ox + CW / 2, gy, CW * 0.3, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.drawImage(img, f.x, f.y, f.w, f.h, ox + f.offX / S, oy + f.offY / S, f.w / S, f.h / S);
+      box = { x: (ox + f.offX / S) * z, y: (oy + f.offY / S) * z, w: f.w / S * z, h: f.h / S * z };
+    }
+  }
+  let box = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    if (box && x >= box.x - 10 && x <= box.x + box.w + 10 && y >= box.y - 10 && y <= box.y + box.h + 10) tap();
+  });
+
+  // ---------- controls ----------
+  const flow = $('flow');
+  const btn = (parent, label, fn, primary) => { const b = document.createElement('button'); b.textContent = label; if (primary) b.className = 'primary'; b.addEventListener('click', fn); parent.appendChild(b); return b; };
+  if (loco) btn(flow, `Giriş: ${loco.pose} → varış`, enter, true);
+  if (M.arrive.length) btn(flow, `Varış: ${M.arrive.map((a) => a.pose).join(' → ')}`, arrive, !loco);
+  if (press) btn(flow, `Dokun: ${press.pose}`, tap);
+  const posesRow = $('poses');
+  const lbl = document.createElement('span'); lbl.className = 'k'; lbl.textContent = 'Pozlar'; posesRow.appendChild(lbl);
+  for (const p of Object.keys(poses)) btn(posesRow, `${p} (${poses[p].frames.length})`, () => playPose(p));
+  $('pause').addEventListener('click', () => { G.paused = !G.paused; $('pause').textContent = G.paused ? 'Devam' : 'Duraklat'; $('step').disabled = !G.paused; });
+  $('step').addEventListener('click', () => update(1000 / (poses[st.pose].fps ?? 12)));
+  $('zoom').addEventListener('change', (e) => { G.zoom = +e.target.value; resize(); });
+  $('speed').addEventListener('input', (e) => { G.speed = +e.target.value; $('speedVal').textContent = G.speed.toFixed(2) + '×'; });
+  $('guides').addEventListener('change', (e) => { G.guides = e.target.checked; });
+
+  const R = DATA.report;
+  const facts = [
+    ['Paket', `${R.packageKB} KB / ${R.budgetKB} KB`, R.packageKB > R.budgetKB],
+    ['Atlas', `${R.atlas.w}×${R.atlas.h} · ${R.atlas.kb} KB`],
+    ['Bellek', `${R.atlas.memoryMB} MB`],
+    ...(loco ? [['Adım / hız', `${loco.strideLength} pt · ${loco.speed} pt/sn`]] : []),
+    ...Object.entries(R.poses).map(([n, p]) => [n, `${p.kind} · ${p.frames} kare${p.frames > 1 ? ` · ${p.fps} fps` : ''}`, false, true]),
+  ];
+  // Pose names are identifiers: uppercase them with English rules (no Turkish dotted İ).
+  $('facts').innerHTML = facts.map(([k, v, bad, id]) => `<div><span class="k"${id ? ' lang="en"' : ''}>${k}</span><span class="v${bad ? ' warn' : ''}">${v}</span></div>`).join('');
+  if (R.warnings.length) { $('warnBox').hidden = false; $('warnings').innerHTML = R.warnings.map((w) => `<li>${w.replace(/</g, '&lt;')}</li>`).join(''); }
+
+  resize();
+  // The stage can start hidden or narrow (an embedded web view); follow its real size and keep
+  // a resting item on its slot.
+  new ResizeObserver(() => { const atSlot = st.mode !== 'walk'; resize(); if (atSlot) st.x = slotX(); }).observe(canvas.parentElement);
+  st.x = slotX();
+  if (loco) enter(); else if (M.arrive.length) arrive(); else playPose(st.pose);
+  let last = performance.now();
+  function tick(now) {
+    const dt = Math.min(now - last, 50); last = now;
+    if (!G.paused) update(dt);
+    render(now);
+    requestAnimationFrame(tick);
+  }
+  img.decode().catch(() => {}).finally(() => requestAnimationFrame(tick));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+.DS_Store
+node_modules/
+.pixel-cache/
+build/
+dist/
+native/bin/
+app/.build/
+app/.swiftpm/
+*.xcodeproj/xcuserdata/
+# Example media stays local; see examples/shadow-wolf/README.md
+examples/*/videos/
+examples/*/start-frames/
+CLAUDE.local.md
