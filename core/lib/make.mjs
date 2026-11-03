@@ -308,7 +308,7 @@ function buildManifest(item, { size, anchor, atlas, images, ptPerPixel, factor }
 // video's file key. Prompt texts and start frame settings are left out, so editing them does
 // not mark a built package as outdated.
 export function packageInputs(item) {
-  const PROMPT_ONLY = ['template', 'anchor', 'subject', 'persistentDetails', 'style'];
+  const PROMPT_ONLY = ['template', 'anchor', 'subject', 'persistentDetails', 'style', 'export'];
   const saved = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith('__')));
   const fields = Object.fromEntries(Object.entries(saved(item)).filter(([k]) => !PROMPT_ONLY.includes(k) && k !== 'poses' && k !== 'layers'));
   if (item.poses) fields.poses = item.poses.map((p) => {

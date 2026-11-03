@@ -10,11 +10,13 @@
 //   inspect <item.json> <pose> | inspect <video>                     frames, contact sheet, suggested range
 //   set-range <item.json> <pose> <a> <b>                             choose the pose's range (24 fps source frames)
 //   make <item.json> [--out dir]                                     package + preview.html + report.json
+//   export <item.json> [--to dir]                                    copy the package to <dir>/<id>/ (default: "export" in item.json)
 //
 // With --json the result is printed to stdout as JSON and progress goes to stderr as JSON lines.
 import path from 'node:path';
 import { inspectPose, inspectVideo, setRange } from './lib/inspect.mjs';
 import { logError, setJsonProgress, UserError, withLog } from './lib/log.mjs';
+import { exportPackage } from './lib/export.mjs';
 import { make } from './lib/make.mjs';
 import { createItem, listTemplates } from './lib/plan.mjs';
 import { videoPrompt } from './lib/prompt.mjs';
@@ -31,6 +33,7 @@ const USAGE = `usage:
   cli.mjs inspect <item.json> <pose>   |   cli.mjs inspect <video> [--cache dir]
   cli.mjs set-range <item.json> <pose> <a> <b>
   cli.mjs make <item.json> [--out dir]
+  cli.mjs export <item.json> [--to dir]
 options: --json (result on stdout as JSON, progress on stderr as JSON lines)`;
 
 function usage(msg) {
@@ -39,7 +42,7 @@ function usage(msg) {
   process.exit(2);
 }
 
-const VALUE_FLAGS = ['template', 'anchor', 'id', 'out', 'cache'];
+const VALUE_FLAGS = ['template', 'anchor', 'id', 'out', 'cache', 'to'];
 const args = process.argv.slice(2), flags = {}, pos = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -167,6 +170,19 @@ const COMMANDS = {
         `package ${r.packageKB} KB of ${r.budgetKB} KB`,
         ...r.warnings.map((w) => `! ${w}`),
         `preview: ${r.preview}`,
+      ].filter(Boolean).join('\n'));
+    });
+  },
+
+  async export() {
+    need(1);
+    await onItem(rest[0], async (item) => {
+      const r = exportPackage(item, { to: flags.to });
+      print(r, (r) => [
+        `exported ${r.id} to ${r.target}: ${r.files.join(', ')}`,
+        r.removed.length ? `removed from the earlier package: ${r.removed.join(', ')}` : null,
+        r.untouched.length ? `left untouched (not part of the package): ${r.untouched.join(', ')}` : null,
+        r.stale ? '! the package is older than item.json or its media; make it again and export once more' : null,
       ].filter(Boolean).join('\n'));
     });
   },

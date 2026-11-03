@@ -17,7 +17,7 @@ export const START_DEFAULTS = { below: 0.2, maxFigure: 0.66, width: 1600, height
 export const OCCASIONAL_DEFAULTS = { weight: 1, wait: [5, 12] };
 
 const ITEM_FIELDS = ['schemaVersion', 'id', 'name', 'type', 'version', 'facing', 'template', 'anchor', 'subject', 'persistentDetails', 'style',
-  'pixelWidth', 'ptPerPixel', 'colors', 'referencePose', 'output', 'canvas', 'poses', 'layers', 'behavior', 'manifest'];
+  'pixelWidth', 'ptPerPixel', 'colors', 'referencePose', 'output', 'export', 'canvas', 'poses', 'layers', 'behavior', 'manifest'];
 const POSE_FIELDS = ['name', 'kind', 'fps', 'startsFrom', 'image', 'motion', 'video', 'range', 'start'];
 export const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
 const LAYER_FIELDS = ['name', 'image', 'key', 'pivot', 'z'];
@@ -87,9 +87,11 @@ export function validate(item) {
   }
   if (item.version !== undefined && !/^\d+\.\d+\.\d+$/.test(item.version)) err('"version" must look like "0.1.0"');
   if (item.facing !== undefined && !FACING.includes(item.facing)) err(`"facing" must be ${FACING.join(' or ')}`);
-  for (const k of ['template', 'anchor', 'subject', 'style', 'referencePose', 'output']) if (item[k] !== undefined && !isStr(item[k])) err(`"${k}" must be a text`);
+  for (const k of ['template', 'anchor', 'subject', 'style', 'referencePose', 'output', 'export']) if (item[k] !== undefined && !isStr(item[k])) err(`"${k}" must be a text`);
   if (item.anchor !== undefined && !/\.(png|jpe?g)$/i.test(item.anchor)) err('"anchor" must be a .png or .jpg file inside the item folder');
+  // "export" is the one path that may leave the item folder (see export.mjs).
   for (const k of ['anchor', 'output']) if (item[k] !== undefined) inside(item[k], `"${k}"`, err);
+  if (item.export !== undefined && !item.export.trim()) err('"export" must be a folder path');
   if (item.persistentDetails !== undefined && (!Array.isArray(item.persistentDetails) || !item.persistentDetails.every((d) => isStr(d) && d.trim())))
     err('"persistentDetails" must be a list of non-empty texts');
   if (item.pixelWidth !== undefined && !(Number.isInteger(item.pixelWidth) && item.pixelWidth >= 16 && item.pixelWidth <= 1024)) err('"pixelWidth" must be a whole number between 16 and 1024');

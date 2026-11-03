@@ -8,6 +8,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { addClient, broadcast, logged, runJob } from './lib/events.mjs';
+import { exportPackage } from './lib/export.mjs';
 import { ffmpegTools } from './lib/frames.mjs';
 import { inspectPose, setRange } from './lib/inspect.mjs';
 import { info, logError, setLogSource, UserError } from './lib/log.mjs';
@@ -242,6 +243,20 @@ route('POST', /^\/api\/items\/([^/]+)\/make$/, ({ dir }) => runJob(dir, 'make pa
   const report = await make(loadAt(dir));
   return { report, status: itemStatus(loadAt(dir)) };
 }));
+
+// Export to another folder. A target given here becomes the item's "export" setting, so the
+// next export (from the UI or the CLI) goes to the same place.
+route('POST', /^\/api\/items\/([^/]+)\/export$/, async ({ req, dir }) => {
+  const { to } = await readJson(req);
+  return runJob(dir, 'export package', async () => {
+    const item = loadAt(dir);
+    if (typeof to === 'string' && to.trim() && to.trim() !== item.export) {
+      item.export = to.trim();
+      saveItem(item);
+    }
+    return { export: exportPackage(item), status: itemStatus(loadAt(dir)) };
+  });
+});
 
 route('GET', /^\/api\/items\/([^/]+)\/report$/, ({ dir }) => {
   const item = loadAt(dir);
