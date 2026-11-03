@@ -2,15 +2,11 @@
 node_modules/
 .pixel-cache/
 build/
-dist/
-native/bin/
-app/.build/
-app/.swiftpm/
-*.xcodeproj/xcuserdata/
-# Example media stays local; see examples/shadow-wolf/README.md
+# Local settings of the web UI (working folder)
+config.local.json
+# Example media and per-item output stay local; see examples/shadow-wolf/README.md
 examples/*/videos/
 examples/*/start-frames/
 examples/*/anchor.*
 examples/*/logs/
 CLAUDE.local.md
-config.local.json
