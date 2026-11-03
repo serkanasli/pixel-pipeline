@@ -14,6 +14,7 @@ import { inspectPose, setRange } from './lib/inspect.mjs';
 import { info, logError, setLogSource, UserError } from './lib/log.mjs';
 import { make } from './lib/make.mjs';
 import { createItem, listTemplates } from './lib/plan.mjs';
+import { listTypes } from './lib/types.mjs';
 import { byName, measureLocomotion, packageDir, poseClip } from './lib/poses.mjs';
 import { videoPrompt } from './lib/prompt.mjs';
 import { loadItem, saveItem } from './lib/schema.mjs';
@@ -28,6 +29,7 @@ const HOST = '127.0.0.1';
 const MAX_UPLOAD = 1024 ** 3; // videos are small (360p, a few seconds); this only stops runaway uploads
 const VIDEO_EXTS = ['mp4', 'mov', 'm4v', 'webm'];
 const IMAGE_EXTS = ['png', 'jpg'];
+const LAYER_EXTS = ['png', 'jpg', 'webp']; // still and layer images
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.log': 'text/plain; charset=utf-8',
@@ -112,8 +114,10 @@ function itemSummary(name) {
   try {
     const item = loadAt(dir);
     const s = itemStatus(item);
-    return { dir: name, id: item.id, name: item.name, type: item.type, template: item.template ?? null, anchor: item.anchor ?? null,
-      posesDone: s.posesDone, posesTotal: s.posesTotal, package: s.package, next: s.next };
+    // A layered item without an anchor shows its first layer image in the list.
+    const thumb = item.anchor ?? item.layers?.map((l) => l.image).find((f) => fs.existsSync(path.join(dir, f))) ?? null;
+    return { dir: name, id: item.id, name: item.name, type: item.type, template: item.template ?? null, anchor: item.anchor ?? null, thumb,
+      posesDone: s.posesDone, posesTotal: s.posesTotal, layersDone: s.layersDone, layersTotal: s.layersTotal, package: s.package, next: s.next };
   } catch (e) {
     return { dir: name, error: e.message };
   }
@@ -142,6 +146,8 @@ route('PUT', /^\/api\/config$/, async ({ req }) => {
 });
 
 route('GET', /^\/api\/templates$/, () => listTemplates());
+
+route('GET', /^\/api\/types$/, () => listTypes());
 
 route('GET', /^\/api\/items$/, () => ({ workspace: workspaceRoot(), items: listItemDirs().map(itemSummary) }));
 
@@ -201,6 +207,34 @@ route('PUT', /^\/api\/items\/([^/]+)\/poses\/([a-z0-9_]+)\/video$/, async ({ req
   saveItem(item);
   info(`${p.name}: video uploaded (${rel})${hadRange ? ', range cleared' : ''}`);
   return { video: rel, status: itemStatus(loadAt(dir)) };
+});
+
+// An image file is kept where item.json already points when the type matches, otherwise it is
+// saved as <name>.<ext> in the item folder and item.json is pointed at it.
+const imageTarget = (current, name, ext) => (current && current !== 'anchor' && path.extname(current).slice(1).toLowerCase().replace('jpeg', 'jpg') === ext ? current : `${name}.${ext}`);
+
+route('PUT', /^\/api\/items\/([^/]+)\/poses\/([a-z0-9_]+)\/image$/, async ({ req, url, dir, params }) => {
+  const ext = extOf(url, LAYER_EXTS);
+  const item = loadAt(dir), p = poseOf(item, params[1]);
+  if (p.kind !== 'still') throw new HttpError(400, `${p.name} is a ${p.kind} and comes from its video; only a still takes an image`);
+  const rel = imageTarget(p.image, p.name, ext);
+  await receiveFile(req, path.join(dir, rel));
+  p.image = rel;
+  delete p.startsFrom;
+  saveItem(item);
+  info(`${p.name}: still image uploaded (${rel})`);
+  return { image: rel, status: itemStatus(loadAt(dir)) };
+});
+
+route('PUT', /^\/api\/items\/([^/]+)\/layers\/([a-z0-9_]+)\/image$/, async ({ req, url, dir, params }) => {
+  const ext = extOf(url, LAYER_EXTS);
+  const item = loadAt(dir), l = (item.layers ?? []).find((x) => x.name === params[1]);
+  if (!l) throw new HttpError(404, `no layer "${params[1]}"; save the layer list first`);
+  const rel = imageTarget(l.image, l.name, ext);
+  await receiveFile(req, path.join(dir, rel));
+  if (l.image !== rel) { l.image = rel; saveItem(item); }
+  info(`layer ${l.name}: image uploaded (${rel})`);
+  return { image: rel, status: itemStatus(loadAt(dir)) };
 });
 
 route('POST', /^\/api\/items\/([^/]+)\/poses\/([a-z0-9_]+)\/start-frame$/, async ({ req, dir, params }) => {

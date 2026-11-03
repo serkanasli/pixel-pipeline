@@ -1,8 +1,9 @@
 // Pose page, top to bottom in the order of the work: start frame -> video prompt -> video ->
 // range. Each section redraws only when its own inputs change, so a file change elsewhere does
-// not reset a video that is playing or a range being chosen.
+// not reset a video that is playing or a range being chosen. A still has one section: where its
+// frame comes from (a frame of another pose or an image).
 import { api, fileUrl, itemUrl, poseUrl } from '../api.js';
-import { actionButton, clear, dropZone, errorCard, extOf, FIELD, h, KIND, startsFromText, toast } from '../ui.js';
+import { actionButton, clear, dropZone, errorCard, extOf, FIELD, h, KIND, sourceText, startsFromText, toast } from '../ui.js';
 
 const START_DEFAULTS = { below: 0.2, maxFigure: 0.66 };
 const LOOPING = new Set(['locomotion', 'loop']);
@@ -29,7 +30,7 @@ export async function render(mount, { route, data, reload }) {
     const p = pose(), s = stat();
     clear(sections.head, h('div.page-head', h('div',
       h('h1', h('code', p.name), h('span.kind', KIND[p.kind])),
-      h('p.muted', `${startsFromText(p.startsFrom)} başlar`, p.kind !== 'still' ? ` · ${p.fps ?? 12} fps` : '',
+      h('p.muted', `${sourceText(p)} ${p.image ? 'oluşur' : 'başlar'}`, p.kind !== 'still' ? ` · ${p.fps ?? 12} fps` : '',
         s.stage === 'done' ? ' · tamam' : ''))));
   }
 
@@ -278,9 +279,44 @@ export async function render(mount, { route, data, reload }) {
   // ---------- still ----------
   function drawStill() {
     const p = pose(), s = stat();
+    const out = h('div');
+    const others = d.item.poses.filter((q) => q.kind !== 'still');
+    // Source: a frame of another pose, the anchor image or an image file of its own.
+    const current = p.image === 'anchor' ? 'anchor' : p.image ? 'file' : 'pose';
+    const choose = async (kind) => {
+      clear(out);
+      const patch = kind === 'anchor' ? { image: 'anchor', startsFrom: undefined }
+        : kind === 'file' ? { image: p.image && p.image !== 'anchor' ? p.image : `${p.name}.png`, startsFrom: undefined }
+        : { image: undefined, startsFrom: { pose: others[0].name, frame: 'last' } };
+      try { await savePose(patch); await reload(); } catch (e) { out.append(errorCard(e, 'Kaydedilemedi')); }
+    };
+    const radio = (kind, label, disabled) => {
+      const r = h('input', { type: 'radio', name: 'still-source', value: kind, checked: current === kind, disabled });
+      r.addEventListener('change', () => choose(kind));
+      return h('label.inline', r, label);
+    };
+    const drop = dropZone({
+      label: p.image && p.image !== 'anchor' && s.stage === 'done' ? 'Görseli değiştir' : 'Görseli buraya bırak',
+      hint: 'PNG, JPG ya da WebP · düz açık arka plan ya da saydam; videolu pozlarla aynı ızgara ve paletten geçer', accept: 'image/png,image/jpeg,image/webp',
+      onFile: async (file) => {
+        if (!['png', 'jpg', 'webp'].includes(extOf(file))) throw new Error('Görsel PNG, JPG ya da WebP olmalı');
+        await api.upload(`${poseUrl(dir, name)}/image?ext=${extOf(file)}`, file);
+        toast(`${name} görseli yüklendi`);
+        await reload();
+      },
+    });
+    const img = p.image && s.stage === 'done' ? h('div.anchor-preview.checker', h('img', { src: fileUrl(dir, s.image, Date.now()), alt: `${name} görseli` })) : null;
     clear(sections.start, h('h2', 'Tek kare'),
-      h('p', `Bu poz ${startsFromText(p.startsFrom)} oluşur; videosu, başlangıç karesi ve promptu yoktur.`),
-      s.stage === 'done' ? h('p.ok', 'Kaynak poz tamam, bu kare pakete girer.') : h('p', `${s.waitsFor} pozu tamamlanınca hazır olur. `, h('a', { href: `#/item/${encodeURIComponent(dir)}/pose/${s.waitsFor}` }, `${s.waitsFor} pozuna git`)));
+      h('div.radio', radio('pose', 'bir pozun karesi', !others.length), radio('anchor', 'çapa görseli'), radio('file', 'görsel dosyası')),
+      out,
+      current === 'pose'
+        ? [h('p', `Bu poz ${startsFromText(p.startsFrom)} oluşur; videosu, başlangıç karesi ve promptu yoktur. Hangi kare olduğu planda seçilir.`),
+          s.stage === 'done' ? h('p.ok', 'Kaynak poz tamam, bu kare pakete girer.') : h('p', `${s.waitsFor} pozu tamamlanınca hazır olur. `, h('a', { href: `#/item/${encodeURIComponent(dir)}/pose/${s.waitsFor}` }, `${s.waitsFor} pozuna git`))]
+        : [h('p', 'Görsel, videolu pozlarla aynı arka plan temizlemeden, ızgaradan ve paletten geçer. Ölçeği çapadan gelir: çapadaki figür "piksel genişliği" kadar sanat pikseli olur. Ayak noktası en alt pikseldir.'),
+          current === 'file' ? h('div.anchor-row', drop, img) : img,
+          s.stage === 'done' ? h('p.ok', 'Görsel hazır, bu kare pakete girer.')
+            : current === 'anchor' ? h('p', 'Önce çapa görselini ekle. ', h('a', { href: `#/item/${encodeURIComponent(dir)}?edit=1` }, 'Öğe ayarları'))
+            : h('p.muted', `Beklenen dosya: ${p.image}`)]);
   }
 
   // Sections redraw when their inputs change; a range being chosen survives unrelated changes.
@@ -295,9 +331,11 @@ export async function render(mount, { route, data, reload }) {
   const draw = { head: drawHead, start: drawStart, prompt: drawPrompt, video: drawVideo, range: drawRange, nav: drawNav };
   function refresh(force) {
     if (pose().kind === 'still') {
+      for (const k of ['prompt', 'video', 'range']) sections[k].hidden = true;
       drawHead(); drawStill(); drawNav();
       return;
     }
+    for (const k of ['prompt', 'video', 'range']) sections[k].hidden = false;
     for (const k of Object.keys(draw)) {
       const key = inputs[k]();
       if (!force && keys[k] === key) continue;

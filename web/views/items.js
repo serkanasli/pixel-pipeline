@@ -26,12 +26,13 @@ export async function render(mount) {
       }
       const n = nextStep(it.dir, it.next);
       list.append(h('a.card', { href },
-        h('div.thumb', it.anchor ? h('img', { src: fileUrl(it.dir, it.anchor), alt: '', loading: 'lazy' }) : h('span.muted', 'çapa yok')),
+        h('div.thumb', it.thumb ? h('img', { src: fileUrl(it.dir, it.thumb), alt: '', loading: 'lazy' }) : h('span.muted', 'görsel yok')),
         h('div.card-body',
           h('h2', it.name?.tr ?? it.name?.en ?? it.dir),
-          h('p.muted', h('code', it.id), it.template ? ` · ${it.template}` : ''),
+          h('p.muted', h('code', it.id), ` · ${it.type}`, it.template ? ` · ${it.template}` : ''),
           h('p.badges',
-            h(`span.badge${it.posesDone === it.posesTotal ? '.ok' : ''}`, `${it.posesDone}/${it.posesTotal} poz hazır`),
+            it.posesTotal ? h(`span.badge${it.posesDone === it.posesTotal ? '.ok' : ''}`, `${it.posesDone}/${it.posesTotal} poz hazır`) : null,
+            it.layersTotal ? h(`span.badge${it.layersDone === it.layersTotal ? '.ok' : ''}`, `${it.layersDone}/${it.layersTotal} katman hazır`) : null,
             h(`span.badge.${it.package.state}`, PACKAGE[it.package.state] + (it.package.packageKB ? ` · ${it.package.packageKB} KB` : ''))),
           h('p.next-line', h('span.k', 'Sıradaki: '), n.text))));
     }

@@ -1,14 +1,15 @@
 // Watches the working folder so that changes made outside the UI (a video saved by the CLI, an
 // agent or Finder, an edited item.json) reach open pages. Non-recursive watchers only: recursive
-// fs.watch is not available everywhere. Per item folder: the folder (item.json, anchor), videos/ and
-// start-frames/. Logs, caches and build output are ignored: they change during our own jobs.
+// fs.watch is not available everywhere. Per item folder: the folder (item.json, anchor, still and
+// layer images), videos/ and start-frames/. Logs, caches and build output are ignored: they change
+// during our own jobs.
 import fs from 'node:fs';
 import path from 'node:path';
 import { broadcast } from './events.mjs';
 import { workspaceRoot } from './workspace.mjs';
 
 const SUBDIRS = ['videos', 'start-frames'];
-const ITEM_FILES = /^(item\.json|anchor\.(png|jpe?g)|videos|start-frames)$/i;
+const ITEM_FILES = /^(item\.json|[^.][^/]*\.(png|jpe?g|webp)|videos|start-frames)$/i;
 const DEBOUNCE_MS = 200;
 
 let root = null;

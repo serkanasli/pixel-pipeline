@@ -1,5 +1,6 @@
 // Fields of item.json shared by the new item page and the item settings: names, facing, the
-// prompt texts and the pixel settings. Edits go straight into `item` and call onChange.
+// prompt texts, the pixel settings and the target canvas. Edits go straight into `item` and call
+// onChange.
 import { h } from './ui.js';
 
 function text(item, key, { label, hint, rows, placeholder, onChange }) {
@@ -46,4 +47,21 @@ export function pixelFields(item, onChange) {
     number(item, 'pixelWidth', { label: 'Piksel genişliği', min: 16, max: 1024, def: 170, onChange }),
     number(item, 'ptPerPixel', { label: 'pt / sanat pikseli', min: 1, max: 4, def: 1, onChange }),
     number(item, 'colors', { label: 'Renk sayısı', min: 2, max: 256, def: 24, onChange }));
+}
+
+// Target canvas in art pixels: full layers are fitted to its width, anything larger is reported.
+export function canvasFields(item, onChange) {
+  const field = (key, label) => {
+    const el = h('input', { type: 'number', min: 1, max: 4096, step: 1, value: item.canvas?.[key] ?? '', placeholder: '—' });
+    el.addEventListener('input', () => {
+      const c = { ...item.canvas };
+      if (el.value === '') delete c[key]; else c[key] = Number(el.value);
+      if (Object.keys(c).length) item.canvas = c; else delete item.canvas;
+      onChange();
+    });
+    return h('label.field', h('span', label), el);
+  };
+  return h('div.stack',
+    h('div.grid3', field('width', 'Tuval genişliği (sanat pikseli)'), field('height', 'Tuval yüksekliği (sanat pikseli)')),
+    h('small.muted', 'İsteğe bağlı. Opak katmanlar tuval genişliğine indirilir; figür ya da katman tuvali aşarsa raporda uyarı çıkar, kırpma yapılmaz. İkisi birlikte verilmeli.'));
 }

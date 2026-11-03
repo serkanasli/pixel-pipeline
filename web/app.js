@@ -2,7 +2,7 @@
 // the server event stream. Item pages share one copy of the item (item.json + status) that is
 // re-read whenever the server reports a change, from this page or from outside (CLI, Finder).
 import { api, itemUrl } from './api.js';
-import { clear, errorCard, h, nextStep, STAGES, toast } from './ui.js';
+import { clear, errorCard, h, IMAGE_STAGE, nextStep, STAGES, toast } from './ui.js';
 import * as itemsView from './views/items.js';
 import * as itemView from './views/item.js';
 import * as newItemView from './views/new-item.js';
@@ -36,7 +36,7 @@ function renderSteps(route, data) {
     clear(bar, h('ol',
       h('li', { class: route.name === 'items' ? 'active' : '' }, h('a', { href: '#/' }, 'Öğeler')),
       h('li', { class: route.name === 'new' ? 'active' : '' }, h('a', { href: '#/new' }, 'Yeni öğe')),
-      h('li.todo', h('span', 'Pozlar')),
+      h('li.todo', h('span', 'Pozlar / katmanlar')),
       h('li.todo', h('span', 'Paket'))));
     return;
   }
@@ -45,13 +45,17 @@ function renderSteps(route, data) {
   const stageIndex = (st) => STAGES.findIndex(([k]) => k === st);
   const poseSteps = (s?.poses ?? []).map((p) => {
     const cls = [p.stage === 'done' ? 'done' : p.stage === 'waiting' ? 'todo' : 'open', route.pose === p.name ? 'active' : ''].join(' ');
-    const sub = p.stage === 'done' ? 'tamam' : p.stage === 'waiting' ? 'bekliyor' : STAGES[stageIndex(p.stage)]?.[1].toLowerCase();
+    const sub = p.stage === 'done' ? 'tamam' : p.stage === 'waiting' ? 'bekliyor' : p.stage === 'image' ? IMAGE_STAGE : STAGES[stageIndex(p.stage)]?.[1].toLowerCase();
     return h('li', { class: cls }, h('a', { href: `${base}/pose/${p.name}` }, h('span.dot'), p.name, h('small', sub)));
   });
+  // Layers have no page of their own: one step for all of them, on the board's settings.
+  const layerStep = s?.layersTotal ? h('li', { class: s.layersDone === s.layersTotal ? 'done' : 'open' },
+    h('a', { href: `${base}?edit=1` }, h('span.dot'), 'Katmanlar', h('small', `${s.layersDone}/${s.layersTotal}`))) : null;
   const pkgState = s?.package.state ?? 'none';
   clear(bar, h('ol',
     h('li.done', h('a', { href: '#/' }, 'Öğeler')),
     h('li', { class: route.name === 'item' ? 'active' : 'done' }, h('a', { href: base }, data?.item?.name?.tr ?? route.dir)),
+    layerStep,
     poseSteps,
     h('li', { class: `${pkgState === 'ready' ? 'done' : 'open'} ${route.name === 'package' ? 'active' : ''}` },
       h('a', { href: `${base}/package` }, h('span.dot'), 'Paket', h('small', { none: 'yok', stale: 'eski', ready: 'hazır' }[pkgState])))));

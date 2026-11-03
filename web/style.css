@@ -108,6 +108,20 @@ details.settings > summary h2 { display: inline; }
 .error-text { color: var(--err); }
 .warn-box { background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); border-radius: var(--radius); padding: 10px 14px; }
 .warn-box ul { margin: 4px 0 0; padding-left: 18px; }
+.ok-box { background: var(--ok-soft); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); border-radius: var(--radius); padding: 10px 14px; display: grid; gap: 4px; }
+.ok-box p { margin: 0; }
+/* Transparent areas of layers and still images show as a checkerboard. */
+.checker, .thumb.checker { --c1: #c9ced6; --c2: #f4f5f7; background: repeating-conic-gradient(var(--c1) 0 25%, var(--c2) 0 50%) 0 0 / 16px 16px; }
+@media (prefers-color-scheme: dark) { .checker, .thumb.checker { --c1: #3a4250; --c2: #252b36; } }
+.checker img { image-rendering: pixelated; }
+.layer-body { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 1fr); gap: 10px; align-items: center; }
+.layer-preview { border-radius: 7px; min-height: 90px; display: grid; place-items: center; padding: 6px; }
+.layer-preview img { max-width: 100%; max-height: 180px; object-fit: contain; }
+.layer-row input[type="number"] { width: 64px; }
+.layer-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+.layer-grid figure { margin: 0; display: grid; gap: 4px; max-width: 100%; }
+.layer-grid .checker { border-radius: 7px; padding: 8px; overflow: auto; max-width: 100%; }
+.layer-grid img { display: block; max-width: none; }
 
 .drop { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 18px; border: 2px dashed var(--line); border-radius: var(--radius); cursor: pointer; background: var(--bg); min-height: 90px; align-content: center; }
 .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
@@ -133,6 +147,8 @@ details.settings > summary h2 { display: inline; }
 .anchor-row { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 1fr); gap: 12px; align-items: center; }
 .anchor-preview { display: grid; gap: 4px; }
 .anchor-preview img { max-width: 100%; max-height: 220px; object-fit: contain; border-radius: 7px; background: var(--soft); }
+.anchor-preview.checker { border-radius: 7px; padding: 6px; }
+.anchor-preview.checker img { background: none; }
 .anchor-thumb { width: 72px; height: 72px; object-fit: contain; background: var(--soft); border-radius: 7px; }
 .item-title { display: flex; gap: 12px; align-items: center; }
 .video-drops { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }

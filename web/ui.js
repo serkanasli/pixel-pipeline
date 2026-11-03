@@ -30,6 +30,8 @@ export const STAGES = [
   ['range', 'Aralık'],
   ['done', 'Tamam'],
 ];
+// Stages of a still or a layer that waits for its image.
+export const IMAGE_STAGE = 'görsel bekliyor';
 export const PACKAGE = { none: 'paket yok', stale: 'paket eski', ready: 'paket hazır' };
 
 export const poseName = (n) => h('code.pose', n);
@@ -40,6 +42,13 @@ export function startsFromText(sf) {
   return `${sf.pose} pozunun ${f}`;
 }
 
+// Where a pose comes from: its start (videos, stills of a pose's frame) or its image (stills).
+export function sourceText(p) {
+  if (p.image === 'anchor') return 'çapa görselinden';
+  if (p.image) return `${p.image} görselinden`;
+  return startsFromText(p.startsFrom);
+}
+
 // The next step of an item as a sentence and the page that does it.
 export function nextStep(dir, n) {
   const pose = (p) => `#/item/${encodeURIComponent(dir)}/pose/${p}`;
@@ -47,13 +56,15 @@ export function nextStep(dir, n) {
   const pkg = `${board}/package`;
   switch (n?.action) {
     case 'add-anchor': return { text: 'Çapa görselini ekle (öğe ayarları)', href: `${board}?edit=1` };
+    case 'add-image': return { text: `${n.pose}: tek kare görselini bırak`, href: pose(n.pose) };
+    case 'add-layer-image': return { text: `${n.layer} katmanının görselini ekle`, href: `${board}?edit=1` };
     case 'make-start-frame': return { text: `${n.pose}: başlangıç karesini hazırla`, href: pose(n.pose) };
     case 'remake-start-frame': return { text: `${n.pose}: başlangıç karesi eskidi, yeniden hazırla`, href: pose(n.pose) };
     case 'fill-fields': return { text: `${n.pose}: prompt için ${n.fields.map((f) => FIELD[f] ?? f).join(', ')} eksik`, href: n.fields.includes('motion') && n.fields.length === 1 ? pose(n.pose) : `${board}?edit=1` };
     case 'add-video': return { text: `${n.pose}: promptla videoyu üret ve buraya bırak`, href: pose(n.pose) };
     case 'choose-range': return { text: `${n.pose}: kullanılacak kare aralığını seç`, href: pose(n.pose) };
     case 'wait': return { text: `${n.pose}: önce ${n.waitsFor ?? 'önceki poz'} tamamlanmalı`, href: n.waitsFor ? pose(n.waitsFor) : board };
-    case 'make-package': return { text: 'Tüm pozlar hazır: paketi oluştur', href: pkg };
+    case 'make-package': return { text: 'Her şey hazır: paketi oluştur', href: pkg };
     case 'remake-package': return { text: 'Paket eski: yeniden oluştur', href: pkg };
     case 'done': return { text: 'Paket hazır ve güncel', href: pkg };
     default: return { text: 'Durum bilinmiyor', href: board };

@@ -1,11 +1,13 @@
 // Editor for an item's pose plan and behavior. Works on plan = { poses, behavior } in place and
 // calls onChange after every edit. Fields it does not show (video, range, start) are kept, except
-// where an edit makes them meaningless: a new kind or fps clears the chosen range.
+// where an edit makes them meaningless: a new kind or fps clears the chosen range. A still takes
+// a frame of another pose or an image (the anchor or a file, dropped on the pose page).
 import { clear, h, KIND } from './ui.js';
 
 const KINDS = Object.keys(KIND);
 const FPS = [6, 8, 12, 24];
 const NAME = /^[a-z][a-z0-9_]*$/;
+const isObj = (v) => v !== null && typeof v === 'object';
 
 export function planEditor(plan, { onChange }) {
   const root = h('div.plan');
@@ -15,23 +17,32 @@ export function planEditor(plan, { onChange }) {
   const others = (p) => plan.poses.filter((q) => q !== p && q.kind !== 'still');
 
   function startsFromSelect(p) {
-    const value = p.startsFrom === 'anchor' || !p.startsFrom ? 'anchor' : `${p.startsFrom.pose}:${p.startsFrom.frame}`;
+    const value = p.image === 'anchor' ? 'image:anchor' : p.image ? 'image:file'
+      : p.startsFrom === 'anchor' || !p.startsFrom ? 'anchor' : `${p.startsFrom.pose}:${p.startsFrom.frame}`;
     const opts = [];
     if (p.kind !== 'still') opts.push(h('option', { value: 'anchor' }, 'çapadan'));
+    else opts.push(h('option', { value: 'image:anchor' }, 'görsel · çapa'), h('option', { value: 'image:file' }, p.image && p.image !== 'anchor' ? `görsel · ${p.image}` : 'görsel · dosya'));
     for (const q of others(p)) {
       opts.push(h('option', { value: `${q.name}:first` }, `${q.name} · ilk kare`));
       opts.push(h('option', { value: `${q.name}:last` }, `${q.name} · son kare`));
     }
     // A specific source frame set in item.json stays selectable.
-    if (value !== 'anchor' && !/:(first|last)$/.test(value)) opts.push(h('option', { value }, `${p.startsFrom.pose} · kare ${p.startsFrom.frame}`));
+    if (isObj(p.startsFrom) && !/:(first|last)$/.test(value)) opts.push(h('option', { value }, `${p.startsFrom.pose} · kare ${p.startsFrom.frame}`));
     const sel = h('select', { 'aria-label': `${p.name} nereden başlar` }, opts);
     sel.value = value;
     if (sel.value !== value) sel.value = opts[0]?.value ?? '';
     sel.addEventListener('change', () => {
       const [pose, frame] = sel.value.split(':');
+      if (pose === 'image') {
+        delete p.startsFrom;
+        p.image = frame === 'anchor' ? 'anchor' : p.image && p.image !== 'anchor' ? p.image : `${p.name}.png`;
+        return changed(true);
+      }
+      const wasImage = !!p.image;
+      delete p.image;
       p.startsFrom = sel.value === 'anchor' ? 'anchor' : { pose, frame: /^\d+$/.test(frame) ? Number(frame) : frame };
       if (p.startsFrom !== 'anchor' && p.start) { delete p.start.below; delete p.start.maxFigure; if (!Object.keys(p.start).length) delete p.start; }
-      changed();
+      changed(wasImage);
     });
     return sel;
   }
@@ -48,7 +59,12 @@ export function planEditor(plan, { onChange }) {
 
   function removePose(p) {
     plan.poses.splice(plan.poses.indexOf(p), 1);
-    for (const q of plan.poses) if (q.startsFrom?.pose === p.name) q.startsFrom = q.kind === 'still' ? { pose: others(q)[0]?.name ?? '', frame: 'last' } : 'anchor';
+    for (const q of plan.poses) {
+      if (q.startsFrom?.pose !== p.name) continue;
+      if (q.kind !== 'still') q.startsFrom = 'anchor';
+      else if (others(q)[0]) q.startsFrom = { pose: others(q)[0].name, frame: 'last' };
+      else { delete q.startsFrom; q.image = 'anchor'; }
+    }
     const b = plan.behavior;
     for (const k of ['enter', 'onPress']) if (b[k] === p.name) delete b[k];
     if (b.arrive) b.arrive = b.arrive.filter((x) => x !== p.name);
@@ -71,8 +87,14 @@ export function planEditor(plan, { onChange }) {
       delete p.range;
       if (p.kind === 'still') {
         for (const k of ['fps', 'video', 'start', 'motion']) delete p[k];
-        if (p.startsFrom === 'anchor' || !p.startsFrom) p.startsFrom = { pose: others(p)[0]?.name ?? '', frame: 'first' };
-      } else p.fps ??= 12;
+        if (p.startsFrom === 'anchor' || !p.startsFrom) {
+          if (others(p)[0]) p.startsFrom = { pose: others(p)[0].name, frame: 'first' };
+          else { delete p.startsFrom; p.image = 'anchor'; }
+        }
+      } else {
+        p.fps ??= 12;
+        if (p.image) { delete p.image; p.startsFrom = 'anchor'; }
+      }
       changed(true);
     });
     const fps = h('select', { 'aria-label': 'fps' }, FPS.map((f) => h('option', { value: f }, `${f} fps`)));
@@ -86,12 +108,14 @@ export function planEditor(plan, { onChange }) {
         h('span.num', String(i + 1)),
         name, kind,
         p.kind !== 'still' ? fps : null,
-        h('label.inline', h('span', 'başlangıç'), startsFromSelect(p)),
+        h('label.inline', h('span', p.kind === 'still' ? 'kaynak' : 'başlangıç'), startsFromSelect(p)),
         h('span.spacer'),
         h('button.icon', { type: 'button', title: 'Yukarı', 'aria-label': `${p.name} yukarı`, disabled: i === 0, onclick: () => move(-1) }, '↑'),
         h('button.icon', { type: 'button', title: 'Aşağı', 'aria-label': `${p.name} aşağı`, disabled: i === plan.poses.length - 1, onclick: () => move(1) }, '↓'),
         h('button.icon.danger', { type: 'button', title: 'Sil', 'aria-label': `${p.name} sil`, disabled: plan.poses.length === 1, onclick: () => { removePose(p); changed(true); } }, '×')),
-      p.kind !== 'still' ? motion : h('p.muted', 'Tek kare: başladığı pozun seçilen karesini kullanır, videosu yoktur.'),
+      p.kind !== 'still' ? motion : h('p.muted', p.image
+        ? 'Tek kare, görselden: video kareleriyle aynı arka plan temizleme, ızgara ve paletten geçer. Dosyayı poz sayfasında bırakırsın.'
+        : 'Tek kare: başladığı pozun seçilen karesini kullanır, videosu yoktur.'),
       p.range ? h('p.muted', `Seçili aralık: ${p.range[0]}–${p.range[1]}`) : null);
   }
 

@@ -1,18 +1,19 @@
-// Item board: the poses as cards in chain order with their stage, the package, and the item's
-// settings and plan (editable, saved to item.json).
+// Item board: the layers and the poses (in chain order) as cards with their stage, the package,
+// and the item's settings, plan and layers (editable, saved to item.json).
 import { api, fileUrl, itemUrl } from '../api.js';
-import { nameFields, pixelFields, promptFields } from '../item-form.js';
+import { canvasFields, nameFields, pixelFields, promptFields } from '../item-form.js';
+import { layerEditor } from '../layer-editor.js';
 import { planEditor } from '../plan-editor.js';
-import { clear, dropZone, errorCard, extOf, FACING, fmtDate, h, KIND, nextStep, PACKAGE, STAGES, startsFromText, toast } from '../ui.js';
+import { clear, dropZone, errorCard, extOf, FACING, fmtDate, h, IMAGE_STAGE, KIND, nextStep, PACKAGE, sourceText, STAGES, toast } from '../ui.js';
 
 export async function render(mount, { route, data, reload }) {
   const dir = route.dir;
   const head = h('div');
+  const note = h('p.note');
   const cards = h('ol.pose-cards');
   const settings = h('details.panel.settings', { open: route.q.edit === '1' });
-  mount.append(head,
-    h('p.note', 'Pozlar zincir sırasında. Her pozun videosu, o poz için hazırlanan başlangıç karesinden üretilir; bu yüzden videolar sırayla gelir. Bir karta tıklayıp o pozda kaldığın yerden devam et.'),
-    cards, settings);
+  const types = await api.get('/api/types');
+  mount.append(head, note, cards, settings);
 
   let draft = null, dirty = false, outdated = false;
 
@@ -23,7 +24,8 @@ export async function render(mount, { route, data, reload }) {
         it.anchor ? h('img.anchor-thumb', { src: fileUrl(dir, it.anchor, d.status.poses[0]?.startFrame?.file ?? it.anchor), alt: 'Çapa görseli' }) : null,
         h('div',
           h('h1', it.name?.tr ?? it.name?.en ?? it.id),
-          h('p.muted', h('code', it.id), ` · ${it.type} · ${FACING[it.facing ?? 'left']} bakar`, it.template ? ` · şablon ${it.template}` : '', ` · ${d.status.posesDone}/${d.status.posesTotal} poz hazır`))),
+          h('p.muted', h('code', it.id), ` · ${it.type}`, it.poses ? ` · ${FACING[it.facing ?? 'left']} bakar` : '', it.template ? ` · şablon ${it.template}` : '',
+            d.status.posesTotal ? ` · ${d.status.posesDone}/${d.status.posesTotal} poz hazır` : '', d.status.layersTotal ? ` · ${d.status.layersDone}/${d.status.layersTotal} katman hazır` : ''))),
       h('div.row', h('a.button', { href: '#/' + `item/${encodeURIComponent(dir)}?edit=1`, onclick: () => { settings.open = true; } }, 'Ayarlar ve plan'))));
   }
 
@@ -33,24 +35,43 @@ export async function render(mount, { route, data, reload }) {
     const stepper = s.kind === 'still' ? null : h('ol.stepper', STAGES.map(([k, label], i) =>
       h('li', { class: i < idx || s.stage === 'done' ? 'done' : i === idx ? 'current' : '' }, label)));
     const sf = s.startFrame?.file;
-    const thumb = sf ? h('img', { src: fileUrl(dir, sf, s.startFrame.state + (s.video ?? '')), alt: `${s.name} başlangıç karesi`, loading: 'lazy' }) : h('span.muted', s.kind === 'still' ? 'tek kare' : 'başlangıç karesi yok');
+    const thumb = s.image && s.stage === 'done' ? h('img', { src: fileUrl(dir, s.image, Date.now()), alt: `${s.name} görseli`, loading: 'lazy' })
+      : sf ? h('img', { src: fileUrl(dir, sf, s.startFrame.state + (s.video ?? '')), alt: `${s.name} başlangıç karesi`, loading: 'lazy' })
+      : h('span.muted', s.kind === 'still' ? 'tek kare' : 'başlangıç karesi yok');
     const n = s.next ? nextStep(dir, s.next) : null;
     const pose = item.poses.find((p) => p.name === s.name);
     return h('li', h('a.pose-card', { href, class: s.stage === 'done' ? 'done' : '' },
       h('div.thumb', thumb),
       h('div.card-body',
         h('h2', h('code', s.name), h('span.kind', KIND[s.kind])),
-        h('p.muted', `${startsFromText(pose.startsFrom)} başlar${s.fps && s.kind !== 'still' ? ` · ${s.fps} fps` : ''}${s.range ? ` · aralık ${s.range[0]}–${s.range[1]}` : ''}`),
+        h('p.muted', `${sourceText(pose)} ${pose.image ? 'oluşur' : 'başlar'}${s.fps && s.kind !== 'still' ? ` · ${s.fps} fps` : ''}${s.range ? ` · aralık ${s.range[0]}–${s.range[1]}` : ''}`),
         stepper,
         s.stage === 'waiting' ? h('p.muted', `${s.waitsFor} tamamlanınca hazır olur.`) : null,
+        s.stage === 'image' ? h('p.muted', `${IMAGE_STAGE}: ${s.image ?? 'çapa görseli'}`) : null,
         s.note === 'start-frame-changed' ? h('p.warn', 'Başlangıç karesinin kaynağı video üretildikten sonra değişti.') : null,
         n ? h('p.next-line', h('span.k', 'Sıradaki: '), n.text) : s.stage === 'done' ? h('p.ok', 'Tamam') : null)));
   }
 
+  // A layer has no page of its own: its card opens the settings, where its image is dropped.
+  function layerCard(s, layer, i) {
+    const ok = s.hasImage;
+    return h('li', h('a.pose-card', { href: `#/item/${encodeURIComponent(dir)}?edit=1`, class: ok ? 'done' : '', onclick: () => { settings.open = true; } },
+      h('div.thumb.checker', ok ? h('img', { src: fileUrl(dir, s.image, Date.now()), alt: `${s.name} görseli`, loading: 'lazy' }) : h('span.muted', 'görsel yok')),
+      h('div.card-body',
+        h('h2', h('code', s.name), h('span.kind', 'katman')),
+        h('p.muted', `z ${layer.z ?? i} · ${(layer.key ?? keyDefault()) ? 'arka planı temizlenir' : 'olduğu gibi kalır'} · ${s.image}`),
+        ok ? h('p.ok', 'Tamam') : h('p.next-line', h('span.k', 'Sıradaki: '), 'görseli ekle'))));
+  }
+  const keyDefault = () => types.find((t) => t.name === current.item.type)?.key ?? true;
+
   function drawCards(d) {
     const pkg = d.status.package;
-    const pn = d.status.poses.every((p) => p.stage === 'done') ? nextStep(dir, d.status.next) : null;
+    note.textContent = d.status.posesTotal
+      ? 'Pozlar zincir sırasında. Her pozun videosu, o poz için hazırlanan başlangıç karesinden üretilir; bu yüzden videolar sırayla gelir. Bir karta tıklayıp o pozda kaldığın yerden devam et.'
+      : 'Katmanlar z sırasıyla üst üste çizilir. Her katmanın görselini ayarlarda bırak, sonra paketi oluştur.';
+    const pn = d.status.poses.every((p) => p.stage === 'done') && d.status.layers.every((l) => l.hasImage) ? nextStep(dir, d.status.next) : null;
     clear(cards,
+      d.status.layers.map((s, i) => layerCard(s, d.item.layers.find((l) => l.name === s.name), i)),
       d.status.poses.map((s) => poseCard(s, d.item)),
       h('li', h('a.pose-card.package-card', { href: `#/item/${encodeURIComponent(dir)}/package`, class: pkg.state === 'ready' ? 'done' : '' },
         h('div.thumb', h('span', '▦')),
@@ -58,7 +79,7 @@ export async function render(mount, { route, data, reload }) {
           h('h2', 'Paket'),
           h('p.muted', PACKAGE[pkg.state] + (pkg.packageKB ? ` · ${pkg.packageKB} / ${pkg.budgetKB} KB` : '') + (pkg.madeAt ? ` · ${fmtDate(pkg.madeAt)}` : '')),
           pkg.warnings ? h('p.warn', `${pkg.warnings} uyarı`) : null,
-          pn ? h('p.next-line', h('span.k', 'Sıradaki: '), pn.text) : h('p.muted', 'Bütün pozlar tamamlanınca oluşturulur.')))));
+          pn ? h('p.next-line', h('span.k', 'Sıradaki: '), pn.text) : h('p.muted', 'Bütün pozlar ve katmanlar tamamlanınca oluşturulur.')))));
   }
 
   // ---------- settings and plan ----------
@@ -89,17 +110,34 @@ export async function render(mount, { route, data, reload }) {
         await reload();
       } catch (err) { out.append(errorCard(err, 'Kaydedilemedi')); }
     };
+    // A dropped layer image is uploaded right away when the layer is already in item.json.
+    const saved = (l) => d.item.layers?.find((x) => x.name === l.name);
+    const layers = draft.layers ? [
+      h('h3', 'Katmanlar'),
+      layerEditor(draft, {
+        keyDefault: keyDefault(), onChange: mark,
+        imageUrl: (l) => (saved(l) && d.status.layers.find((x) => x.name === l.name)?.hasImage ? fileUrl(dir, saved(l).image, Date.now()) : null),
+        onImage: async (l, file) => {
+          if (!saved(l) || dirty) throw new Error('Önce katman listesini kaydet, sonra görseli bırak.');
+          await api.upload(`${itemUrl(dir)}/layers/${encodeURIComponent(l.name)}/image?ext=${extOf(file)}`, file);
+          toast(`${l.name} görseli yüklendi`);
+          await reload();
+        },
+      })] : [];
+    const poses = draft.poses ? [
+      h('h3', 'Pozlar'),
+      h('p.muted', 'Tür ya da fps değişirse o pozun seçili aralığı silinir. Poz adı değişirse başlangıç karesi ve video dosya adları değişmez; gerekirse yeniden hazırla.'),
+      planEditor(draft, { onChange: mark })] : [];
     clear(settings,
-      h('summary', h('h2', 'Ayarlar ve plan')),
+      h('summary', h('h2', draft.poses ? 'Ayarlar ve plan' : 'Ayarlar ve katmanlar')),
       banner,
       h('form.stack', { onsubmit: save },
         h('div.grid3', ...nameFields(draft, mark)),
         h('div.anchor-row', anchorZone, d.item.anchor ? h('div.anchor-preview', h('img', { src: fileUrl(dir, d.item.anchor, Date.now()), alt: 'Çapa görseli' })) : null),
-        ...promptFields(draft, mark),
-        h('details', h('summary', 'Piksel ayarları'), pixelFields(draft, mark)),
-        h('h3', 'Pozlar'),
-        h('p.muted', 'Tür ya da fps değişirse o pozun seçili aralığı silinir. Poz adı değişirse başlangıç karesi ve video dosya adları değişmez; gerekirse yeniden hazırla.'),
-        planEditor(draft, { onChange: mark }),
+        ...(draft.poses ? promptFields(draft, mark) : []),
+        h('details', { open: !draft.poses }, h('summary', 'Piksel ayarları ve tuval'), pixelFields(draft, mark), canvasFields(draft, mark)),
+        ...layers,
+        ...poses,
         out,
         h('div.row.sticky-actions', saveBtn, h('button', { type: 'button', onclick: () => { drawSettings(current); } }, 'Değişiklikleri at'))));
   }
