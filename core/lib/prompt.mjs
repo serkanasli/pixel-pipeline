@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { UserError } from './log.mjs';
 import { flattenBackground, hex } from './prep.mjs';
-import { byName, itemPath } from './poses.mjs';
+import { byName, itemPath, stillSource } from './poses.mjs';
 import { startFramePaths } from './startframe.mjs';
 
 export const PROMPT_TEMPLATE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../templates/video-prompt.json');
@@ -38,7 +38,7 @@ async function backgroundColour(item, p) {
 export async function videoPrompt(item, poseName) {
   const p = byName(item, poseName);
   if (!p) throw new UserError(`unknown pose "${poseName}"`);
-  if (p.kind === 'still') throw new UserError(`${p.name} is a still: it uses a frame of ${p.startsFrom.pose} and needs no video`);
+  if (p.kind === 'still') throw new UserError(`${p.name} is a still: it uses ${stillSource(p)} and needs no video`);
   const t = JSON.parse(fs.readFileSync(PROMPT_TEMPLATE, 'utf8'));
   const missing = missingPromptFields(item, p);
   const colour = await backgroundColour(item, p);

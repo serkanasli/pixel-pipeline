@@ -5,10 +5,11 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { groundSpeed } from './analyze.mjs';
+import { prepareImage } from './images.mjs';
 import { progress, UserError } from './log.mjs';
 import { pack, writeAtlas } from './pack.mjs';
 import { pixelFile, pixelize } from './pixelize.mjs';
-import { byName, checkRange, continuation, effectiveRange, gridFactor, itemPath, poseClip, poseVideo, sampledFrames } from './poses.mjs';
+import { byName, checkRange, continuation, effectiveRange, gridFactor, imageFactor, itemPath, poseClip, poseImage, poseVideo, sampledFrames } from './poses.mjs';
 import { writePreview } from './preview.mjs';
 import { chainOrder, LOOPING, occasionalList, refName } from './schema.mjs';
 import { fileKey, listFrames, measure, readRGBA, round, sha256 } from './util.mjs';
@@ -32,7 +33,13 @@ export async function make(item, { out } = {}) {
   const report = { id: item.id, poses: {}, warnings };
   for (const p of chainOrder(item.poses)) {
     const r = { kind: p.kind };
-    if (p.kind === 'still') {
+    if (p.kind === 'still' && p.image) {
+      const img = poseImage(item, p);
+      if (!img.exists) throw new UserError(`${p.name}: ${img.rel ? `image not found: ${img.rel}` : 'the item has no anchor image yet'}`);
+      p.__image = await prepareImage(img.abs, cacheRoot);
+      p.__frames = [0];
+      r.image = img.rel;
+    } else if (p.kind === 'still') {
       const ref = byName(item, p.startsFrom.pose);
       const c = continuation(ref, p.startsFrom.frame, ref.__range);
       p.__clip = ref.__clip;
@@ -69,14 +76,19 @@ export async function make(item, { out } = {}) {
   }
 
   // 3. One grid and one palette for every frame of every pose.
+  // Video frames and images have their own source scale but end up on the same art pixel size.
   const factor = await gridFactor(item);
+  const imgFactor = item.poses.some((p) => p.__image) ? await imageFactor(item) : null;
   const pxDir = path.join(cacheRoot, 'pixel', item.id);
   fs.rmSync(pxDir, { recursive: true, force: true });
   fs.mkdirSync(pxDir, { recursive: true });
   const jobs = [];
-  for (const p of item.poses) p.__frames.forEach((src, i) => jobs.push({ file: path.join(p.__clip.key, listFrames(p.__clip.key)[src]), out: pixelFile(pxDir, p.name, i), pose: p, i }));
+  for (const p of item.poses) {
+    if (p.__image) { jobs.push({ file: p.__image.file, out: pixelFile(pxDir, p.name, 0), pose: p, i: 0, factor: imgFactor, kernel: 'nearest' }); continue; }
+    p.__frames.forEach((src, i) => jobs.push({ file: path.join(p.__clip.key, listFrames(p.__clip.key)[src]), out: pixelFile(pxDir, p.name, i), pose: p, i, factor }));
+  }
   progress('pixelizing', `${jobs.length} frames, ${colors} colours, ${round(factor, 2)} source px per pixel`);
-  const px = await pixelize(jobs, factor, colors);
+  const px = await pixelize(jobs, colors);
   for (const j of jobs) {
     const { data, w, h } = await readRGBA(j.out);
     (j.pose.__m ??= [])[j.i] = measure(data, w, h);
@@ -108,6 +120,7 @@ export async function make(item, { out } = {}) {
   Object.assign(report, {
     output: outDir,
     sourcePxPerPixel: round(factor, 3),
+    ...(imgFactor ? { imagePxPerPixel: round(imgFactor, 3) } : {}),
     palette: px.palette,
     size, anchor: { x: 0.5, y: anchorY },
     atlas: { ...packed.atlasSize, kb: round(packed.atlas.length / 1024), memoryMB: round(packed.atlasSize.w * packed.atlasSize.h * 4 / 1048576) },
@@ -173,7 +186,7 @@ function buildManifest(item, { size, anchorY, atlas, ptPerPixel, factor }) {
     schemaVersion: 1,
     id: item.id,
     type: item.type ?? 'pet',
-    version: item.version ?? '0.1.0',
+    version: item.version ?? '1.0.0',
     name: item.name ?? { en: item.id },
     renderer: 'raster',
     facing: item.facing ?? 'left',
@@ -210,8 +223,11 @@ export function packageInputs(item) {
   const fields = Object.fromEntries(Object.entries(saved(item)).filter(([k]) => !PROMPT_ONLY.includes(k) && k !== 'poses'));
   fields.poses = item.poses.map((p) => {
     const { motion, start, ...rest } = saved(p);
-    const v = poseVideo(item, p);
-    return { ...rest, video: v?.rel, videoKey: v?.exists ? fileKey(v.abs) : null };
+    const v = poseVideo(item, p), img = poseImage(item, p);
+    return { ...rest, video: v?.rel, videoKey: v?.exists ? fileKey(v.abs) : null, ...(img ? { imageKey: img.exists ? fileKey(img.abs) : null } : {}) };
   });
+  // Images are scaled from the anchor, so it changes pixels once an item has any.
+  const anchor = item.anchor && itemPath(item, item.anchor);
+  if (item.poses.some((p) => p.image) && anchor && fs.existsSync(anchor)) fields.anchorKey = fileKey(anchor);
   return crypto.createHash('sha1').update(JSON.stringify(fields)).digest('hex').slice(0, 16);
 }

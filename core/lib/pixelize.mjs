@@ -1,5 +1,6 @@
 // Turns keyed frames into true pixel art: one pixel grid and one palette for the whole item.
-// - grid: every frame is downscaled by the same factor (source px per art pixel)
+// - grid: every frame is downscaled by its source's factor (source px per art pixel), so one art
+//   pixel is the same size everywhere; video frames with a cubic kernel, images with nearest
 // - alpha: hard edge (>= 50% opaque), no anti-aliasing
 // - palette: k-means over the opaque pixels of all frames of all poses together, so a colour
 //   cannot change from frame to frame or pose to pose; no dithering
@@ -11,23 +12,27 @@ const ITER = 15;
 const SPECK = 12;
 const SAMPLE_MAX = 400000; // palette is fitted on at most this many pixels
 
-// jobs: [{ file, out }]; returns { width, height, palette: ['#rrggbb', …] }
-export async function pixelize(jobs, factor, colors) {
-  const meta = await sharp(jobs[0].file).metadata();
-  const W = Math.round(meta.width / factor), H = Math.round(meta.height / factor);
-
+// jobs: [{ file, out, factor, kernel = 'cubic' }]; returns { palette: ['#rrggbb', …] }
+export async function pixelize(jobs, colors) {
+  const sizes = new Map(); // video frames of one clip share a size
   const frames = [];
   for (const job of jobs) {
-    const data = await sharp(job.file).resize(W, H, { kernel: 'cubic' }).ensureAlpha().raw().toBuffer();
-    frames.push({ ...job, data });
+    const key = `${path.dirname(job.file)}|${job.factor}`;
+    if (!sizes.has(key) || job.kernel === 'nearest') {
+      const meta = await sharp(job.file).metadata();
+      sizes.set(key, { W: Math.round(meta.width / job.factor), H: Math.round(meta.height / job.factor) });
+    }
+    const { W, H } = sizes.get(key);
+    const data = await sharp(job.file).resize(W, H, { kernel: job.kernel ?? 'cubic' }).ensureAlpha().raw().toBuffer();
+    frames.push({ ...job, data, W, H });
   }
 
   const px = [];
-  for (const { data } of frames) for (let i = 0; i < W * H; i++) if (data[i * 4 + 3] >= 128) px.push([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]);
+  for (const { data, W, H } of frames) for (let i = 0; i < W * H; i++) if (data[i * 4 + 3] >= 128) px.push([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]);
   const sample = px.length > SAMPLE_MAX ? px.filter((_, i) => i % Math.ceil(px.length / SAMPLE_MAX) === 0) : px;
   const pal = kmeans(sample, colors);
 
-  for (const { data, out } of frames) {
+  for (const { data, out, W, H } of frames) {
     const buf = Buffer.alloc(W * H * 4);
     const drop = specks(data, W, H);
     for (let i = 0; i < W * H; i++) {
@@ -37,7 +42,7 @@ export async function pixelize(jobs, factor, colors) {
     }
     await sharp(buf, { raw: { width: W, height: H, channels: 4 } }).png().toFile(out);
   }
-  return { width: W, height: H, palette: pal.map((p) => '#' + p.map((v) => v.toString(16).padStart(2, '0')).join('')) };
+  return { palette: pal.map((p) => '#' + p.map((v) => v.toString(16).padStart(2, '0')).join('')) };
 }
 
 function nearest(pal, r, g, b) {

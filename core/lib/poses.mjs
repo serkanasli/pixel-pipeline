@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { analyzeClip, groundSpeed } from './analyze.mjs';
 import { extract, SOURCE_FPS } from './frames.mjs';
+import { prepareImage } from './images.mjs';
 import { UserError } from './log.mjs';
 import { LOOPING } from './schema.mjs';
 import { fileKey, resolveInside, round } from './util.mjs';
@@ -33,6 +34,18 @@ export function poseVideo(item, p) {
   }
   return { rel: `videos/${p.name}.mp4`, abs: itemPath(item, `videos/${p.name}.mp4`), exists: false, explicit: false };
 }
+
+// The image of a still pose that has "image": the anchor or a file in the item folder.
+export function poseImage(item, p) {
+  if (!p.image) return null;
+  const rel = p.image === 'anchor' ? item.anchor ?? null : p.image;
+  if (!rel) return { rel: null, abs: null, exists: false, anchor: true };
+  const abs = itemPath(item, rel);
+  return { rel, abs, exists: fs.existsSync(abs), anchor: p.image === 'anchor' };
+}
+
+// Where a still's frame comes from, for messages.
+export const stillSource = (p) => (p.image === 'anchor' ? 'the anchor image' : p.image ? p.image : `a frame of ${p.startsFrom.pose}`);
 
 // Extracted frames + analysis of the pose's video, memoised on the item object.
 export async function poseClip(item, p) {
@@ -91,8 +104,10 @@ export function continuation(ref, frame, range) {
 export const referencePose = (item) => (item.referencePose ? byName(item, item.referencePose) : item.poses.find((p) => p.kind !== 'still'));
 
 // Source px per art pixel, from the figure width in the reference pose's first played frame.
+// An item without videos is measured from its images instead.
 export async function gridFactor(item) {
   const ref = referencePose(item);
+  if (!ref) return imageFactor(item);
   const clip = await poseClip(item, ref);
   if (!clip) throw new UserError(`${ref.name}: the reference pose has no video yet; the pixel grid is measured from it`);
   const { range } = effectiveRange(ref, clip);
@@ -100,6 +115,17 @@ export async function gridFactor(item) {
   const m = clip.frames[range[0]].m;
   if (!m) throw new UserError(`${ref.name}: frame ${range[0]} is empty after background removal`);
   return m.width / (item.pixelWidth ?? DEFAULT_PIXEL_WIDTH);
+}
+
+// Source px per art pixel for images. Images are taken at the anchor's scale: the figure in the
+// anchor is pixelWidth art pixels wide, the same as the reference pose's first frame (which
+// normally starts from the anchor). Without an anchor the first still image sets the scale.
+export async function imageFactor(item) {
+  let abs = item.anchor ? itemPath(item, item.anchor) : null;
+  if (!abs || !fs.existsSync(abs)) abs = item.poses.map((p) => poseImage(item, p)).find((i) => i?.exists)?.abs ?? null;
+  if (!abs) throw new UserError('the pixel grid is measured from the anchor image or a still image, and neither is there yet');
+  const img = await prepareImage(abs, path.join(item.__dir, '.pixel-cache'));
+  return img.m.width / (item.pixelWidth ?? DEFAULT_PIXEL_WIDTH);
 }
 
 // Stride (pt) and speed (pt/s) of a locomotion range: planted feet slide back at walking speed.

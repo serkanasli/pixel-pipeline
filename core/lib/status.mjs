@@ -3,17 +3,23 @@
 //
 // Pose stages, in order: start-frame -> prompt -> video -> range -> done. A pose whose video is
 // already there skips the first two (the start frame only matters before the video is made).
-// A still is done as soon as the pose it takes its frame from is done.
+// A still is done as soon as the pose it takes its frame from is done, or its image is there.
 import fs from 'node:fs';
 import { packageInputs } from './make.mjs';
 import { missingPromptFields } from './prompt.mjs';
-import { byName, cachedAnalysis, effectiveRange, itemPath, poseVideo } from './poses.mjs';
+import { byName, cachedAnalysis, effectiveRange, itemPath, poseImage, poseVideo } from './poses.mjs';
 import { chainOrder } from './schema.mjs';
 import { startFrameState } from './startframe.mjs';
 
 export const STAGES = ['start-frame', 'prompt', 'video', 'range', 'done'];
 
 export function poseStatus(item, p, done) {
+  if (p.kind === 'still' && p.image) {
+    const img = poseImage(item, p);
+    if (img.exists) return { name: p.name, kind: p.kind, image: img.rel, stage: 'done', next: null };
+    return { name: p.name, kind: p.kind, image: img.rel, stage: 'image',
+      next: img.anchor && !img.rel ? { action: 'add-anchor', pose: p.name } : { action: 'add-image', pose: p.name, image: img.rel } };
+  }
   if (p.kind === 'still') {
     const ref = p.startsFrom.pose;
     return done.has(ref)
@@ -86,6 +92,7 @@ export function describeNext(item, n) {
   const p = n.pose && byName(item, n.pose);
   switch (n.action) {
     case 'add-anchor': return `add an anchor image (anchor.png) to the item folder and set "anchor" in item.json`;
+    case 'add-image': return `${n.pose}: add the still image ${n.image} to the item folder`;
     case 'make-start-frame': return `${n.pose}: make the start frame (start-frame item.json ${n.pose})`;
     case 'remake-start-frame': return `${n.pose}: the start frame is outdated, make it again (start-frame item.json ${n.pose})`;
     case 'fill-fields': return `${n.pose}: fill in ${n.fields.join(', ')} in item.json, then get the prompt (prompt item.json ${n.pose})`;

@@ -16,7 +16,8 @@ export const OCCASIONAL_DEFAULTS = { weight: 1, wait: [5, 12] };
 
 const ITEM_FIELDS = ['schemaVersion', 'id', 'name', 'type', 'version', 'facing', 'template', 'anchor', 'subject', 'persistentDetails', 'style',
   'pixelWidth', 'ptPerPixel', 'colors', 'referencePose', 'output', 'poses', 'behavior'];
-const POSE_FIELDS = ['name', 'kind', 'fps', 'startsFrom', 'motion', 'video', 'range', 'start'];
+const POSE_FIELDS = ['name', 'kind', 'fps', 'startsFrom', 'image', 'motion', 'video', 'range', 'start'];
+export const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
 const START_FIELDS = Object.keys(START_DEFAULTS);
 const BEHAVIOR_FIELDS = ['enter', 'arrive', 'onPress', 'occasional', 'restTracks'];
 // Fields of version 1 with their replacement, so an old file gets a useful message.
@@ -99,9 +100,16 @@ export function validate(item) {
     if (!KINDS.includes(p.kind)) err(`${at}: "kind" must be one of ${KINDS.join(', ')}`);
     if (p.motion !== undefined && !isStr(p.motion)) err(`${at}: "motion" must be a text`);
     if (p.kind === 'still') {
-      for (const k of ['fps', 'video', 'range', 'start']) if (p[k] !== undefined) err(`${at}: a still takes its frame from another pose, "${k}" is not used`);
-      if (!isObj(p.startsFrom)) err(`${at}: a still needs "startsFrom": { "pose": …, "frame": "first" | "last" | <source frame> }`);
+      for (const k of ['fps', 'video', 'range', 'start']) if (p[k] !== undefined) err(`${at}: a still is one frame from another pose or an image, "${k}" is not used`);
+      if ((p.startsFrom === undefined) === (p.image === undefined))
+        err(`${at}: a still needs either "startsFrom": { "pose": …, "frame": "first" | "last" | <source frame> } or "image": "anchor" | "<file>"`);
+      if (p.startsFrom !== undefined && !isObj(p.startsFrom)) err(`${at}: a still's "startsFrom" must be { "pose": …, "frame": … }`);
+      if (p.image !== undefined && p.image !== 'anchor') {
+        if (!isStr(p.image) || !IMAGE_EXT.test(p.image)) err(`${at}: "image" must be "anchor" or a .png, .jpg or .webp file inside the item folder`);
+        inside(p.image, `${at}: "image"`, err);
+      }
     } else {
+      if (p.image !== undefined) err(`${at}: only a still takes "image"; a ${p.kind} comes from its video`);
       if (p.fps !== undefined && !FPS.includes(p.fps)) err(`${at}: "fps" must be ${FPS.join(', ')}`);
       if (p.video !== undefined) { if (!isStr(p.video) || !p.video) err(`${at}: "video" must be a path`); inside(p.video, `${at}: "video"`, err); }
       if (p.range !== undefined) {

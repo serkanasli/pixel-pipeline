@@ -1,0 +1,19 @@
+{
+  "title": { "en": "Character (image only)", "tr": "Karakter (yalnızca görsel)" },
+  "description": {
+    "en": "One still pose from the anchor image, no video; poses with video can be added later.",
+    "tr": "Çapa görselinden tek karelik duruş, video yok; videolu pozlar sonra eklenebilir."
+  },
+  "type": "character",
+  "item": {
+    "facing": "left",
+    "style": "Pixel art, crisp square pixels, no anti-aliasing, no blur, no gradients, limited palette, 1-pixel dark outline, flat shadow tones.",
+    "pixelWidth": 96,
+    "ptPerPixel": 1,
+    "colors": 24
+  },
+  "poses": [
+    { "name": "idle", "kind": "still", "image": "anchor" }
+  ],
+  "behavior": { "arrive": ["idle"] }
+}

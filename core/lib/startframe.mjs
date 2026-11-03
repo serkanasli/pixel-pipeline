@@ -9,7 +9,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { progress, UserError } from './log.mjs';
 import { flattenBackground, hex, prepStart } from './prep.mjs';
-import { byName, continuation, itemPath, poseClip, poseVideo } from './poses.mjs';
+import { byName, continuation, itemPath, poseClip, poseVideo, stillSource } from './poses.mjs';
 import { START_DEFAULTS } from './schema.mjs';
 import { fileKey, listFrames } from './util.mjs';
 
@@ -53,7 +53,7 @@ export function startFrameState(item, p) {
 export async function makeStartFrame(item, poseName) {
   const p = byName(item, poseName);
   if (!p) throw new UserError(`unknown pose "${poseName}"`);
-  if (p.kind === 'still') throw new UserError(`${p.name} is a still: it takes a frame of ${p.startsFrom.pose} and has no video, so it needs no start frame`);
+  if (p.kind === 'still') throw new UserError(`${p.name} is a still: it uses ${stillSource(p)} and has no video, so it needs no start frame`);
   const expected = expectedSource(item, p);
   if (expected.blocked) throw new UserError(`${p.name}: cannot make the start frame, ${expected.message}`);
   const files = startFramePaths(item, p.name);
