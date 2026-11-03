@@ -1,0 +1,14 @@
+{
+  "title": { "en": "Layered background", "tr": "Katmanlı arka plan" },
+  "description": {
+    "en": "An opaque far layer fitted to the canvas, with transparent middle and ground layers in front.",
+    "tr": "Tuvale oturan opak uzak katman, önünde saydam orta ve zemin katmanları."
+  },
+  "type": "background",
+  "item": { "pixelWidth": 195, "ptPerPixel": 2, "colors": 32, "canvas": { "width": 195, "height": 422 } },
+  "layers": [
+    { "name": "far", "image": "far.png", "key": false, "z": 0 },
+    { "name": "mid", "image": "mid.png", "key": true, "z": 1 },
+    { "name": "ground", "image": "ground.png", "key": true, "z": 2 }
+  ]
+}

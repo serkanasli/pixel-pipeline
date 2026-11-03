@@ -13,7 +13,7 @@ import { inspectPose, setRange } from './lib/inspect.mjs';
 import { info, logError, setLogSource, UserError } from './lib/log.mjs';
 import { make } from './lib/make.mjs';
 import { createItem, listTemplates } from './lib/plan.mjs';
-import { byName, measureLocomotion, poseClip } from './lib/poses.mjs';
+import { byName, measureLocomotion, packageDir, poseClip } from './lib/poses.mjs';
 import { videoPrompt } from './lib/prompt.mjs';
 import { loadItem, saveItem } from './lib/schema.mjs';
 import { makeStartFrame } from './lib/startframe.mjs';
@@ -245,7 +245,7 @@ route('POST', /^\/api\/items\/([^/]+)\/make$/, ({ dir }) => runJob(dir, 'make pa
 
 route('GET', /^\/api\/items\/([^/]+)\/report$/, ({ dir }) => {
   const item = loadAt(dir);
-  const file = path.join(dir, item.output ?? `build/${item.id}`, 'report.json');
+  const file = path.join(packageDir(item), 'report.json');
   if (!fs.existsSync(file)) return { report: null }; // not made yet: a state, not an error
   const report = JSON.parse(fs.readFileSync(file, 'utf8'));
   return { report, base: path.relative(dir, path.dirname(file)) };

@@ -1,0 +1,12 @@
+{
+  "title": { "en": "Fire base", "tr": "Ateş tabanı" },
+  "description": {
+    "en": "One transparent sprite (the stones or the stand); the flame is drawn by the app's engine.",
+    "tr": "Tek saydam sprite (taşlar ya da kaide); alevi uygulamanın motoru çizer."
+  },
+  "type": "fire",
+  "item": { "pixelWidth": 120, "ptPerPixel": 1, "colors": 24 },
+  "layers": [
+    { "name": "base", "image": "base.png", "key": true, "pivot": { "x": 0.5, "y": 1 }, "z": 0 }
+  ]
+}

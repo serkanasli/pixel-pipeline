@@ -1,17 +1,22 @@
-// Writes preview.html next to the package: a single self-contained page (manifest, atlas map and
-// atlas image are embedded) that plays the item the way the app's engine would.
+// Writes preview.html next to the package: a single self-contained page (manifest, atlas map,
+// atlas and layer images are embedded) that plays the item the way the app's engine would and
+// shows the layers on a checkerboard.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const template = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'preview.html'), 'utf8');
 
-export function writePreview(outDir, { manifest, atlasJson, atlasFile, report }) {
+const dataUri = (file) => `data:image/webp;base64,${fs.readFileSync(file).toString('base64')}`;
+
+export function writePreview(outDir, { manifest, atlasJson, atlasFile, layers, ptPerPixel, report }) {
   const data = {
     manifest,
+    ptPerPixel,
     atlas: atlasJson,
-    image: `data:image/webp;base64,${fs.readFileSync(atlasFile).toString('base64')}`,
-    report: { packageKB: report.packageKB, budgetKB: report.budgetKB, atlas: report.atlas, warnings: report.warnings, poses: report.poses },
+    image: atlasFile ? dataUri(atlasFile) : null,
+    layers: layers.map((l) => ({ name: l.name, z: l.z, w: l.w, h: l.h, src: dataUri(path.join(outDir, l.file)) })),
+    report: { packageKB: report.packageKB, budgetKB: report.budgetKB, atlas: report.atlas, layers: report.layers, warnings: report.warnings, poses: report.poses },
   };
   const html = template
     .replace('__TITLE__', escapeHtml(manifest.name?.tr ?? manifest.name?.en ?? manifest.id))

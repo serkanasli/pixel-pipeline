@@ -1,6 +1,6 @@
 // Plan templates (templates/plans/*.json) and new items made from them. A template is data: the
-// ordered pose list, how the poses chain and the behavior. Nothing in the code knows a template
-// or a pose by name.
+// ordered pose list, how the poses chain and the behavior, or the image layers of a static item.
+// Nothing in the code knows a template, a pose or a layer by name.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,23 +33,24 @@ export function itemFromTemplate(template, dirName, fields = {}) {
     name: { en: titleCase(slug), tr: titleCase(slug) },
     type: t.type,
     template: t.name,
-    subject: '',
-    persistentDetails: [],
+    ...(t.poses ? { subject: '', persistentDetails: [] } : {}),
     ...structuredClone(t.item),
-    poses: structuredClone(t.poses),
-    behavior: structuredClone(t.behavior ?? {}),
+    ...(t.poses ? { poses: structuredClone(t.poses), behavior: structuredClone(t.behavior ?? {}) } : {}),
+    ...(t.layers ? { layers: structuredClone(t.layers) } : {}),
+    ...(t.manifest ? { manifest: structuredClone(t.manifest) } : {}),
     ...fields,
   };
   return validate(item);
 }
 
-// Creates <dir> with item.json, videos/ and start-frames/; copies the anchor image when given.
+// Creates <dir> with item.json and, when a pose has a video, videos/ and start-frames/; copies
+// the anchor image when given.
 export function createItem(dir, { template, anchor, fields = {} }) {
   const abs = path.resolve(dir);
   if (fs.existsSync(path.join(abs, 'item.json'))) throw new UserError(`${abs} already holds an item.json`);
   const item = itemFromTemplate(template, path.basename(abs), fields);
   fs.mkdirSync(abs, { recursive: true });
-  for (const d of ITEM_DIRS) fs.mkdirSync(path.join(abs, d), { recursive: true });
+  if ((item.poses ?? []).some((p) => p.kind !== 'still')) for (const d of ITEM_DIRS) fs.mkdirSync(path.join(abs, d), { recursive: true });
   if (anchor) {
     const ext = path.extname(anchor).toLowerCase().replace('.jpeg', '.jpg');
     if (!['.png', '.jpg'].includes(ext)) throw new UserError('the anchor image must be a .png or .jpg file');

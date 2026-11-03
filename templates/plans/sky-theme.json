@@ -1,0 +1,14 @@
+{
+  "title": { "en": "Sky theme", "tr": "Gökyüzü teması" },
+  "description": {
+    "en": "An opaque sky fitted to the canvas, a transparent nebula and a moon on top.",
+    "tr": "Tuvale oturan opak gökyüzü, üstünde saydam bulutsu ve ay."
+  },
+  "type": "sky-theme",
+  "item": { "pixelWidth": 195, "ptPerPixel": 2, "colors": 32, "canvas": { "width": 195, "height": 422 } },
+  "layers": [
+    { "name": "sky", "image": "sky.png", "key": false, "z": 0 },
+    { "name": "nebula", "image": "nebula.png", "key": true, "z": 1 },
+    { "name": "moon", "image": "moon.png", "key": true, "pivot": { "x": 0.5, "y": 0.5 }, "z": 2 }
+  ]
+}

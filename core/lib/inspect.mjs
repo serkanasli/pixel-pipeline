@@ -4,7 +4,7 @@ import path from 'node:path';
 import { analyzeClip } from './analyze.mjs';
 import { extract, sheetLayout } from './frames.mjs';
 import { info, UserError } from './log.mjs';
-import { byName, checkRange, effectiveRange, measureLocomotion, poseClip, poseVideo, sampledFrames, stepOf, stillSource } from './poses.mjs';
+import { byName, checkRange, effectiveRange, measureLocomotion, poseClip, posesOf, poseVideo, sampledFrames, stepOf, stillSource } from './poses.mjs';
 import { saveItem } from './schema.mjs';
 
 // A pose's video: frame count, contact sheet, the suggestion for its kind and fps, the range in
@@ -57,7 +57,7 @@ export async function setRange(item, poseName, a, b) {
 
 function poseOf(item, name) {
   const p = byName(item, name);
-  if (!p) throw new UserError(`unknown pose "${name}"; poses: ${item.poses.map((q) => q.name).join(', ')}`);
+  if (!p) throw new UserError(`unknown pose "${name}"; poses: ${posesOf(item).map((q) => q.name).join(', ') || 'none'}`);
   if (p.kind === 'still') throw new UserError(`${p.name} is a still: it uses ${stillSource(p)} and has no video of its own`);
   return p;
 }

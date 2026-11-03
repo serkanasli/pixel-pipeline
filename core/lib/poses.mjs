@@ -20,7 +20,11 @@ export function itemPath(item, rel) {
   return abs;
 }
 
-export const byName = (item, name) => item.poses.find((p) => p.name === name);
+// Where `make` writes the package: always inside the item folder (export copies it elsewhere).
+export const packageDir = (item) => itemPath(item, item.output ?? `build/${item.id}`);
+
+export const posesOf = (item) => item.poses ?? []; // a layered item may have no poses
+export const byName = (item, name) => posesOf(item).find((p) => p.name === name);
 export const stepOf = (p) => SOURCE_FPS / (p.fps ?? 12);
 
 // The pose's video: "video" when set, otherwise videos/<pose name>.<mp4|mov|m4v|webm> when such a
@@ -101,7 +105,7 @@ export function continuation(ref, frame, range) {
 }
 
 // The pose whose first played frame sets the pixel grid: "referencePose", else the first pose with a video.
-export const referencePose = (item) => (item.referencePose ? byName(item, item.referencePose) : item.poses.find((p) => p.kind !== 'still'));
+export const referencePose = (item) => (item.referencePose ? byName(item, item.referencePose) : posesOf(item).find((p) => p.kind !== 'still'));
 
 // Source px per art pixel, from the figure width in the reference pose's first played frame.
 // An item without videos is measured from its images instead.
@@ -122,7 +126,7 @@ export async function gridFactor(item) {
 // normally starts from the anchor). Without an anchor the first still image sets the scale.
 export async function imageFactor(item) {
   let abs = item.anchor ? itemPath(item, item.anchor) : null;
-  if (!abs || !fs.existsSync(abs)) abs = item.poses.map((p) => poseImage(item, p)).find((i) => i?.exists)?.abs ?? null;
+  if (!abs || !fs.existsSync(abs)) abs = posesOf(item).map((p) => poseImage(item, p)).find((i) => i?.exists)?.abs ?? null;
   if (!abs) throw new UserError('the pixel grid is measured from the anchor image or a still image, and neither is there yet');
   const img = await prepareImage(abs, path.join(item.__dir, '.pixel-cache'));
   return img.m.width / (item.pixelWidth ?? DEFAULT_PIXEL_WIDTH);

@@ -1,0 +1,12 @@
+{
+  "title": { "en": "Telescope", "tr": "Teleskop" },
+  "description": {
+    "en": "One transparent sprite standing on the ground.",
+    "tr": "Zeminde duran tek saydam sprite."
+  },
+  "type": "telescope",
+  "item": { "pixelWidth": 80, "ptPerPixel": 1, "colors": 24 },
+  "layers": [
+    { "name": "body", "image": "body.png", "key": true, "pivot": { "x": 0.5, "y": 1 }, "z": 0 }
+  ]
+}

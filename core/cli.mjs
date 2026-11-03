@@ -80,8 +80,9 @@ const COMMANDS = {
   },
 
   async templates() {
-    const list = listTemplates().map((t) => ({ name: t.name, title: t.title, type: t.type, poses: t.poses.map((p) => `${p.name}:${p.kind}`) }));
-    print(list, (l) => l.map((t) => `${t.name.padEnd(14)} ${t.type.padEnd(10)} ${t.poses.join(' ')}`).join('\n'));
+    const list = listTemplates().map((t) => ({ name: t.name, title: t.title, type: t.type,
+      poses: (t.poses ?? []).map((p) => `${p.name}:${p.kind}`), layers: (t.layers ?? []).map((l) => l.name) }));
+    print(list, (l) => l.map((t) => `${t.name.padEnd(16)} ${t.type.padEnd(11)} ${[...t.poses, ...t.layers.map((n) => `layer:${n}`)].join(' ')}`).join('\n'));
   },
 
   async status() {
@@ -89,8 +90,9 @@ const COMMANDS = {
     await onItem(rest[0], (item) => {
       const s = itemStatus(item);
       print(s, (s) => [
-        `${s.id}: ${s.posesDone}/${s.posesTotal} poses ready, package ${s.package.state}${s.package.packageKB ? ` (${s.package.packageKB} KB)` : ''}`,
+        `${s.id}: ${[s.posesTotal ? `${s.posesDone}/${s.posesTotal} poses` : null, s.layersTotal ? `${s.layersDone}/${s.layersTotal} layers` : null].filter(Boolean).join(', ')} ready, package ${s.package.state}${s.package.packageKB ? ` (${s.package.packageKB} KB)` : ''}`,
         ...s.poses.map((p) => `  ${p.name.padEnd(12)} ${p.kind.padEnd(10)} ${p.stage}${p.range ? `  range ${p.range[0]}–${p.range[1]}` : p.suggested ? `  suggested ${p.suggested[0]}–${p.suggested[1]}` : ''}${p.note ? `  (${p.note})` : ''}`),
+        ...s.layers.map((l) => `  ${l.name.padEnd(12)} ${'layer'.padEnd(10)} ${l.hasImage ? 'done' : `no image (${l.image})`}`),
         `next: ${describeNext(item, s.next)}`,
       ].join('\n'));
     });
@@ -160,7 +162,9 @@ const COMMANDS = {
         `size ${r.size.width}×${r.size.height} pt, anchor y ${r.anchor.y}, ${r.sourcePxPerPixel} source px per pixel, ${r.palette.length} colours`,
         ...Object.entries(r.poses).map(([n, p]) => `  ${n.padEnd(12)} ${p.kind.padEnd(10)} ${String(p.frames).padStart(3)} frames${p.fps ? ` @ ${p.fps} fps` : ''}${p.range ? `  (source ${p.range[0]}–${p.range[1]}${p.rangeChosen ? '' : ', suggested'})` : ''}`),
         r.locomotion ? `stride ${r.locomotion.strideLength} pt, speed ${r.locomotion.speed} pt/s` : null,
-        `atlas ${r.atlas.w}×${r.atlas.h} (${r.atlas.kb} KB, ${r.atlas.memoryMB} MB in memory), package ${r.packageKB} KB of ${r.budgetKB} KB`,
+        ...Object.entries(r.layers ?? {}).map(([n, l]) => `  ${n.padEnd(12)} ${'layer'.padEnd(10)} z ${l.z}, ${l.w}×${l.h} px, ${l.kb} KB (${l.background})`),
+        r.atlas ? `atlas ${r.atlas.w}×${r.atlas.h} (${r.atlas.kb} KB, ${r.atlas.memoryMB} MB in memory)` : null,
+        `package ${r.packageKB} KB of ${r.budgetKB} KB`,
         ...r.warnings.map((w) => `! ${w}`),
         `preview: ${r.preview}`,
       ].filter(Boolean).join('\n'));

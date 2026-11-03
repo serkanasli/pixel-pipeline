@@ -4,10 +4,11 @@
 // Pose stages, in order: start-frame -> prompt -> video -> range -> done. A pose whose video is
 // already there skips the first two (the start frame only matters before the video is made).
 // A still is done as soon as the pose it takes its frame from is done, or its image is there.
+// A layer only needs its image.
 import fs from 'node:fs';
 import { packageInputs } from './make.mjs';
 import { missingPromptFields } from './prompt.mjs';
-import { byName, cachedAnalysis, effectiveRange, itemPath, poseImage, poseVideo } from './poses.mjs';
+import { byName, cachedAnalysis, effectiveRange, itemPath, packageDir, poseImage, posesOf, poseVideo } from './poses.mjs';
 import { chainOrder } from './schema.mjs';
 import { startFrameState } from './startframe.mjs';
 
@@ -61,7 +62,7 @@ export function poseStatus(item, p, done) {
 }
 
 export function packageStatus(item) {
-  const dir = itemPath(item, item.output ?? `build/${item.id}`);
+  const dir = packageDir(item);
   const file = `${dir}/report.json`;
   if (!fs.existsSync(file)) return { state: 'none' };
   const report = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -74,17 +75,23 @@ export function packageStatus(item) {
 export function itemStatus(item) {
   const done = new Set();
   const poses = [];
-  for (const p of chainOrder(item.poses)) {
+  for (const p of chainOrder(posesOf(item))) {
     const s = poseStatus(item, p, done);
     if (s.stage === 'done') done.add(p.name);
     poses.push(s);
   }
+  const layers = (item.layers ?? []).map((l) => {
+    const has = fs.existsSync(itemPath(item, l.image));
+    return { name: l.name, image: l.image, hasImage: has, stage: has ? 'done' : 'image',
+      next: has ? null : { action: 'add-layer-image', layer: l.name, image: l.image } };
+  });
   const pkg = packageStatus(item);
-  const open = poses.find((s) => s.next);
+  const open = layers.find((s) => s.next) ?? poses.find((s) => s.next);
   const next = open?.next ?? (poses.every((s) => s.stage === 'done')
     ? (pkg.state === 'ready' ? { action: 'done' } : { action: pkg.state === 'stale' ? 'remake-package' : 'make-package' })
     : { action: 'wait', pose: poses.find((s) => s.stage !== 'done').name });
-  return { id: item.id, name: item.name, posesDone: done.size, posesTotal: poses.length, poses, package: pkg, next };
+  return { id: item.id, name: item.name, posesDone: done.size, posesTotal: poses.length, poses,
+    layersDone: layers.filter((l) => l.hasImage).length, layersTotal: layers.length, layers, package: pkg, next };
 }
 
 // The next step as one English sentence (CLI output; the web UI words it in Turkish itself).
@@ -92,6 +99,7 @@ export function describeNext(item, n) {
   const p = n.pose && byName(item, n.pose);
   switch (n.action) {
     case 'add-anchor': return `add an anchor image (anchor.png) to the item folder and set "anchor" in item.json`;
+    case 'add-layer-image': return `layer ${n.layer}: add its image as ${n.image} in the item folder`;
     case 'add-image': return `${n.pose}: add the still image ${n.image} to the item folder`;
     case 'make-start-frame': return `${n.pose}: make the start frame (start-frame item.json ${n.pose})`;
     case 'remake-start-frame': return `${n.pose}: the start frame is outdated, make it again (start-frame item.json ${n.pose})`;
@@ -99,7 +107,7 @@ export function describeNext(item, n) {
     case 'add-video': return `${n.pose}: generate the video from ${n.startFrame} with the prompt (prompt item.json ${n.pose}) and save it as ${n.video}`;
     case 'choose-range': return `${n.pose}: choose the range (set-range item.json ${n.pose} <a> <b>)${n.suggested ? `; suggested ${n.suggested[0]} ${n.suggested[1]}` : '; inspect it first (inspect item.json ' + n.pose + ')'}`;
     case 'wait': return `${n.pose}: waits for ${n.waitsFor ?? p?.startsFrom?.pose ?? 'an earlier pose'}`;
-    case 'make-package': return 'every pose is ready: make the package (make item.json)';
+    case 'make-package': return 'everything is ready: make the package (make item.json)';
     case 'remake-package': return 'the package is outdated: make it again (make item.json)';
     case 'done': return 'the package is ready and up to date';
     default: return n.action;

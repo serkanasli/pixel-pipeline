@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__ · önizleme</title>
 <style>
-/* One stage (scene + item), controls under it, measured facts and warnings at the bottom. */
+/* One stage (scene + item), controls under it, the layers on a checkerboard, measured facts and warnings at the bottom. */
 :root {
   --bg: #eef0f3; --panel: #ffffff; --fg: #1b2029; --muted: #5d6675; --line: #d5dae2;
   --accent: #c8642a; --accent-fg: #ffffff; --warn: #a8461a;
@@ -37,6 +37,8 @@ input[type="range"] { accent-color: var(--accent); width: 120px; }
 .v { font: 13px var(--mono); }
 .warn { color: var(--warn); }
 ul { margin: 0; padding-left: 18px; }
+.checker { background: repeating-conic-gradient(#c9ced6 0 25%, #f4f5f7 0 50%) 0 0 / 16px 16px; border-radius: 8px; overflow: auto; padding: 8px; }
+.checker canvas { width: auto; cursor: default; }
 </style>
 </head>
 <body>
@@ -45,8 +47,8 @@ ul { margin: 0; padding-left: 18px; }
     <h1 id="title"></h1>
     <p class="sub" id="subtitle"></p>
   </header>
-  <div class="stage"><canvas id="c" aria-label="Sahne: dinlenirken öğeye dokunmak tepkiyi oynatır"></canvas></div>
-  <section class="panel" aria-label="Kontroller">
+  <div class="stage" id="stageBox"><canvas id="c" aria-label="Sahne: dinlenirken öğeye dokunmak tepkiyi oynatır"></canvas></div>
+  <section class="panel" id="controls" aria-label="Kontroller">
     <div class="row" id="flow"></div>
     <div class="row" id="poses"></div>
     <div class="row">
@@ -56,26 +58,71 @@ ul { margin: 0; padding-left: 18px; }
       <label>Hız <input type="range" id="speed" min="0.25" max="2" step="0.05" value="1"><span class="val" id="speedVal">1.00×</span></label>
       <label><input type="checkbox" id="guides" checked> Zemin çizgileri</label>
     </div>
-    <div class="facts" id="facts"></div>
   </section>
+  <section class="panel" id="layerBox" aria-label="Katmanlar" hidden>
+    <div class="row"><span class="k">Katmanlar</span><span class="row" id="layerToggles"></span>
+      <label>Büyütme <select id="lzoom"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select></label></div>
+    <div class="checker"><canvas id="lc" aria-label="Katmanlar z sırasıyla, saydam alanlar dama deseniyle"></canvas></div>
+  </section>
+  <section class="panel"><div class="facts" id="facts"></div></section>
   <section class="panel" id="warnBox" hidden><span class="k">Uyarılar</span><ul id="warnings" class="warn"></ul></section>
 </div>
 <script>
 (() => {
   const DATA = /*__DATA__*/null;
-  const M = DATA.manifest, A = DATA.atlas, S = A.meta.scale; // S: atlas px per pt
-  const PP = 1 / S; // pt per art pixel
-  const CW = A.meta.sourceSize.w / S, CH = A.meta.sourceSize.h / S; // canvas in pt
-  const poses = M.poses, loco = M.locomotion, restPose = M.arrive.at(-1)?.pose;
-  const press = M.onPress.find((a) => a.pose);
-  const occasional = M.occasional ?? [];
+  const M = DATA.manifest, A = DATA.atlas, R = DATA.report;
+  const PP = DATA.ptPerPixel; // pt per art pixel
   const $ = (id) => document.getElementById(id);
+  $('title').textContent = M.name?.tr ?? M.name?.en ?? M.id;
+  $('subtitle').textContent = `${M.id} · ${M.type} · ${M.size.width}×${M.size.height} pt · 1 sanat pikseli = ${PP} pt`;
+
+  const loco = M.locomotion, occasional = M.occasional ?? [];
+  const facts = [
+    ['Paket', `${R.packageKB} KB / ${R.budgetKB} KB`, R.packageKB > R.budgetKB],
+    ...(R.atlas ? [['Atlas', `${R.atlas.w}×${R.atlas.h} · ${R.atlas.kb} KB`], ['Bellek', `${R.atlas.memoryMB} MB`]] : []),
+    ...(loco ? [['Adım / hız', `${loco.strideLength} pt · ${loco.speed} pt/sn`]] : []),
+    ...(occasional.length ? [['Ara hareketler', occasional.map((o) => `${o.pose} ${o.wait[0]}–${o.wait[1]} sn`).join(', ')]] : []),
+    ...Object.entries(R.poses).map(([n, p]) => [n, `${p.kind} · ${p.frames} kare${p.frames > 1 ? ` · ${p.fps} fps` : ''}`, false, true]),
+    ...Object.entries(R.layers ?? {}).map(([n, l]) => [n, `katman · z ${l.z} · ${l.w}×${l.h} px · ${l.kb} KB`, false, true]),
+  ];
+  // Pose and layer names are identifiers: uppercase them with English rules (no Turkish dotted İ).
+  $('facts').innerHTML = facts.map(([k, v, bad, id]) => `<div><span class="k"${id ? ' lang="en"' : ''}>${k}</span><span class="v${bad ? ' warn' : ''}">${v}</span></div>`).join('');
+  if (R.warnings.length) { $('warnBox').hidden = false; $('warnings').innerHTML = R.warnings.map((w) => `<li>${w.replace(/</g, '&lt;')}</li>`).join(''); }
+
+  if (A) player(); else { $('stageBox').hidden = true; $('controls').hidden = true; }
+  if (DATA.layers.length) layers();
+
+  // ---------- layers: drawn in z order at art-pixel size, each can be switched off ----------
+  function layers() {
+    $('layerBox').hidden = false;
+    const c = $('lc'), cx = c.getContext('2d');
+    const list = DATA.layers.map((l) => ({ ...l, on: true, img: Object.assign(new Image(), { src: l.src }) })).sort((a, b) => a.z - b.z);
+    const W = Math.max(...list.map((l) => l.w)), H = Math.max(...list.map((l) => l.h));
+    let zoom = 2;
+    const draw = () => {
+      c.width = W * zoom; c.height = H * zoom;
+      cx.imageSmoothingEnabled = false;
+      for (const l of list) if (l.on && l.img.complete) cx.drawImage(l.img, 0, 0, l.w * zoom, l.h * zoom);
+    };
+    for (const l of list) {
+      const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: true });
+      box.addEventListener('change', () => { l.on = box.checked; draw(); });
+      const lab = document.createElement('label'); lab.lang = 'en'; lab.append(box, `${l.name} (z ${l.z})`);
+      $('layerToggles').appendChild(lab);
+      l.img.decode().catch(() => {}).finally(draw);
+    }
+    $('lzoom').addEventListener('change', (e) => { zoom = +e.target.value; draw(); });
+    draw();
+  }
+
+  function player() {
+  const S = A.meta.scale; // S: atlas px per pt
+  const CW = A.meta.sourceSize.w / S, CH = A.meta.sourceSize.h / S; // canvas in pt
+  const poses = M.poses, restPose = M.arrive.at(-1)?.pose;
+  const press = M.onPress.find((a) => a.pose);
   const canvas = $('c'), ctx = canvas.getContext('2d');
   const img = new Image();
   img.src = DATA.image;
-
-  $('title').textContent = M.name?.tr ?? M.name?.en ?? M.id;
-  $('subtitle').textContent = `${M.id} · ${M.type} · ${M.size.width}×${M.size.height} pt · 1 sanat pikseli = ${PP} pt`;
 
   const G = { paused: false, speed: 1, zoom: 2, guides: true };
   const st = { mode: 'idle', pose: restPose ?? Object.keys(poses)[0], t: 0, x: 0, dist: 0, queue: [], returnTo: null, frame: null };
@@ -181,19 +228,6 @@ ul { margin: 0; padding-left: 18px; }
   $('speed').addEventListener('input', (e) => { G.speed = +e.target.value; $('speedVal').textContent = G.speed.toFixed(2) + '×'; });
   $('guides').addEventListener('change', (e) => { G.guides = e.target.checked; });
 
-  const R = DATA.report;
-  const facts = [
-    ['Paket', `${R.packageKB} KB / ${R.budgetKB} KB`, R.packageKB > R.budgetKB],
-    ['Atlas', `${R.atlas.w}×${R.atlas.h} · ${R.atlas.kb} KB`],
-    ['Bellek', `${R.atlas.memoryMB} MB`],
-    ...(loco ? [['Adım / hız', `${loco.strideLength} pt · ${loco.speed} pt/sn`]] : []),
-    ...(occasional.length ? [['Ara hareketler', occasional.map((o) => `${o.pose} ${o.wait[0]}–${o.wait[1]} sn`).join(', ')]] : []),
-    ...Object.entries(R.poses).map(([n, p]) => [n, `${p.kind} · ${p.frames} kare${p.frames > 1 ? ` · ${p.fps} fps` : ''}`, false, true]),
-  ];
-  // Pose names are identifiers: uppercase them with English rules (no Turkish dotted İ).
-  $('facts').innerHTML = facts.map(([k, v, bad, id]) => `<div><span class="k"${id ? ' lang="en"' : ''}>${k}</span><span class="v${bad ? ' warn' : ''}">${v}</span></div>`).join('');
-  if (R.warnings.length) { $('warnBox').hidden = false; $('warnings').innerHTML = R.warnings.map((w) => `<li>${w.replace(/</g, '&lt;')}</li>`).join(''); }
-
   resize();
   // The stage can start hidden or narrow (an embedded web view); follow its real size and keep
   // a resting item on its slot.
@@ -208,6 +242,7 @@ ul { margin: 0; padding-left: 18px; }
     requestAnimationFrame(tick);
   }
   img.decode().catch(() => {}).finally(() => requestAnimationFrame(tick));
+  }
 })();
 </script>
 </body>
