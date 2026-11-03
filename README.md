@@ -1,8 +1,8 @@
 # Pixel Pipeline
 
-Yandan çekilmiş videolardan **pixel art öğe paketi** (atlas + manifest) üreten yerel web arayüzü ve komut satırı aracı.
+Yandan çekilmiş videolardan ve görsellerden **pixel art öğe paketi** (atlas ya da katman görselleri + manifest) üreten yerel web arayüzü ve komut satırı aracı.
 
-*Turns side-view videos of a character, pet or object into a pixel art sprite package (one atlas + a manifest) with one palette, measured walk speed and ready-to-play poses. A local web UI and a CLI over the same core; Node + ffmpeg, runs on macOS and Linux. No AI service is called: the tool prepares the start frame and the prompt for each video, any video model can make the video.*
+*Turns side-view videos of a character, pet or object into a pixel art sprite package (one atlas + a manifest) with one palette, measured walk speed and ready-to-play poses. Still images and layered static items (a fire base, a telescope, a background, a sky theme) go through the same grid and palette. A local web UI and a CLI over the same core; Node + ffmpeg, runs on macOS and Linux. No AI service is called: the tool prepares the start frame and the prompt for each video, any video model can make the video.*
 
 Uçtan uca bir üretim denemesinden ("kurt testi") çıktı: video modelinden alınan doğal hareket, ortak piksel ızgarasına ve ortak palete indirilerek küçük ve tutarlı bir pakete dönüştürülür. Araç öğeden bağımsızdır. Yürüyen bir hayvan, yerinde duran bir karakter ya da başka bir öğe aynı kodla, yalnızca planı değişerek üretilir.
 
@@ -10,11 +10,12 @@ Aynı öğe klasörleri üzerinde iki taraf çalışır: bir kişi tarayıcıdak
 
 ## Ne verirsin, ne alırsın
 
-**Girdi:** bir çapa görseli, bir poz planı (şablondan) ve her poz için bir video.
+**Girdi:** bir çapa görseli, bir poz planı (şablondan) ve her poz için bir video. Ya da yalnızca görseller: tek karelik pozlar için bir görsel (örneğin çapanın kendisi), statik öğeler için katman görselleri.
 
 **Çıktı:** öğe klasöründe `build/<id>/` altında
 - `manifest.json`: pozlar, kare listeleri, fps, adım uzunluğu, hız, çapa noktası, davranış
-- `<ad>-atlas.webp` + `<ad>-atlas.json`: tek atlas, kayıpsız, ortak palet
+- `<ad>-atlas.webp` + `<ad>-atlas.json`: pozların tek atlası, kayıpsız, ortak palet
+- `<ad>-<katman>.webp`: her katman için ayrı, kayıpsız görsel (katmanlı öğelerde)
 - `preview.html`: öğeyi sahnede oynatan, tek dosyalık önizleme
 - `report.json`: ölçümler, paket boyutu, bellek, uyarılar
 
@@ -45,6 +46,7 @@ Tek bağımlılık `sharp`'tır. Yerel ikili dosyası olmayan platformlarda `@im
   shadow-wolf/
     item.json          öğe ve poz planı
     anchor.png         çapa görseli
+    base.png …         tek kare ve katman görselleri (katmanlı öğelerde)
     start-frames/      video modeline verilecek başlangıç kareleri (<poz>.png + <poz>.json)
     videos/            pozların videoları (<poz>.mp4 adıyla kaydetmek yeterli)
     build/<id>/        paket
@@ -58,13 +60,15 @@ Bir pozun videosu `item.json`'daki `video` alanıdır. Alan yoksa `videos/<poz a
 
 Her pozun videosu, aracın o poz için hazırladığı **başlangıç karesinden** üretilir. Zincirdeki bir poz, bağlı olduğu pozun seçilen karesinden başlar. Bu nedenle videolar sırayla gelir:
 
-1. **Yeni öğe:** kimlik, çapa görseli, plan şablonu ve pozlar, prompt alanları (öğe tarifi, kalıcı detaylar, stil cümlesi). Elde hazır video varsa burada bırakılabilir.
+1. **Yeni öğe:** kimlik ve tür, çapa görseli, plan şablonu ve pozlar, prompt alanları (öğe tarifi, kalıcı detaylar, stil cümlesi). Elde hazır video varsa burada bırakılabilir. Katmanlı bir şablonda pozların yerine katmanlar gelir: görseller sürükle-bırakla eklenir, arka plan temizleme, z sırası, pivot ve tuval burada ayarlanır.
 2. **Her poz için, zincir sırasıyla:**
    1. *Başlangıç karesi:* çapadan (`below`, `maxFigure` ayarlarıyla) ya da bağlı pozun seçilen karesinden hazırlanır.
    2. *Video promptu:* öğeden doldurulmuş hazır metin.
    3. *Video:* başlangıç karesi ve promptla üretilip bırakılır.
    4. *Aralık:* kare sayfasında önerilen aralık işaretlidir. Başlangıç ve bitiş tıklanarak seçilir; seçim pozun fps'iyle canlı oynar. Yürüme pozlarında adım uzunluğu ve hız gösterilir.
-3. **Paket:** rapor, uyarılar, bütçe ve sayfa içinde önizleme.
+3. **Paket:** rapor, uyarılar, bütçe, katmanlar dama deseni üzerinde, sayfa içinde önizleme ve dışa aktarma.
+
+Tek karelik bir pozun poz sayfasında kaynak seçilir: bir pozun karesi, çapa görseli ya da görsel dosyası. Görsel dosyası sayfaya bırakılabilir ya da öğe klasörüne kaydedilebilir.
 
 Arayüzde her sayfanın üstünde adım çubuğu ve tek bir "Sıradaki adım" bandı, altında canlı log paneli bulunur. Bağlı pozun aralığı değişirse sonraki pozun başlangıç karesi **eski** olarak işaretlenir. Paket oluşturulduktan sonra `item.json` ya da videolar değişirse paket de eski görünür.
 
@@ -82,6 +86,7 @@ node core/cli.mjs inspect items/fox/item.json walk                   # kareler, 
 node core/cli.mjs inspect any-video.mp4                              # öğe dışında bir videoyu incele
 node core/cli.mjs set-range items/fox/item.json walk 42 74           # aralığı seç (24 fps kaynak kareleri)
 node core/cli.mjs make items/fox/item.json                           # paket + preview.html + report.json
+node core/cli.mjs export items/fox/item.json --to ../app/assets/items  # paketi <hedef>/<id>/ altına kopyala
 ```
 
 `--json` ile sonuç stdout'a JSON olarak yazılır, ilerleme stderr'e JSON satırları olarak gider. Bir ajan için döngü şudur: `status` ile sıradaki adımı oku, onu yap (başlangıç karesi, prompt, videoyu `videos/<poz>.mp4` olarak kaydet, `set-range`), tekrar `status`.
@@ -115,7 +120,8 @@ node core/cli.mjs make items/fox/item.json                           # paket + p
 
 | Alan | Anlamı |
 |---|---|
-| `id`, `type` | `id` = `<type>.<kebab-case>`; ikisinin türü aynı olmalı. |
+| `id`, `type` | `id` = `<type>.<kebab-case>`; ikisinin türü aynı olmalı. Türler `templates/types/` altındadır: `pet`, `character`, `fire`, `telescope`, `background`, `sky-theme`. |
+| `version` | Manifest'e yazılır; verilmezse `1.0.0`. |
 | `facing` | Figürün baktığı yön: `left` ya da `right`. |
 | `anchor` | Çapa görseli (öğe klasöründe PNG ya da JPG). |
 | `subject` | Öğenin kısa İngilizce tarifi; her video promptuna girer. |
@@ -124,7 +130,12 @@ node core/cli.mjs make items/fox/item.json                           # paket + p
 | `pixelWidth` | Referans pozun ilk oynatılan karesindeki figürün sanat pikseli cinsinden genişliği. Izgara bundan hesaplanır. |
 | `ptPerPixel` | 1 sanat pikseli kaç pt (1 = ince detay, 2 = kalın piksel). |
 | `colors` | Ortak paletteki renk sayısı (bütün pozlar). |
-| `referencePose` | İsteğe bağlı: ızgaranın ölçüldüğü poz. Verilmezse videosu olan ilk poz. |
+| `referencePose` | İsteğe bağlı: ızgaranın ölçüldüğü poz. Verilmezse videosu olan ilk poz. Videosu olan poz yoksa ızgara görsellerden ölçülür. |
+| `canvas` | İsteğe bağlı hedef tuval `{ "width", "height" }`, sanat pikseli. Opak katmanlar genişliğine indirilir; figür ya da katman aşarsa rapor uyarır. |
+| `poses`, `layers` | Pozlar, katmanlar ya da ikisi birden (bkz. [Görsellerden](#görsellerden-tek-kare-ve-katmanlı-öğeler)). |
+| `manifest` | Manifest'e olduğu gibi eklenen alanlar (bkz. aşağıda). |
+| `output` | İsteğe bağlı paket klasörü, öğe klasörü içinde; verilmezse `build/<id>`. |
+| `export` | İsteğe bağlı dışa aktarma hedefi; göreli (öğe klasörüne göre) ya da mutlak (bkz. [Dışa aktarma](#dışa-aktarma)). |
 
 **Poz alanları**
 
@@ -133,6 +144,7 @@ node core/cli.mjs make items/fox/item.json                           # paket + p
 | `kind` | `locomotion`, `loop`, `transition`, `reaction` ya da `still`. |
 | `fps` | 12, 8, 6 ya da 24. Kaynak her zaman 24 fps okunur; poz her 2., 3. ya da 4. kareyi alır. |
 | `startsFrom` | `"anchor"` ya da `{ "pose": "<ad>", "frame": "first" \| "last" \| <kaynak kare> }`. Hem başlangıç karesini hem de pakette yerleşimi belirler: poz, o karenin konumundan devam eder. |
+| `image` | Yalnızca `still`: `startsFrom` yerine bir görsel. `"anchor"` öğenin çapası, ya da öğe klasöründe bir PNG/JPG/WebP dosyası. |
 | `motion` | Hareketin kısa İngilizce tarifi; video promptuna girer. |
 | `video` | İsteğe bağlı; verilmezse `videos/<ad>.mp4` (ya da `.mov`, `.m4v`, `.webm`). |
 | `range` | `[başlangıç, bitiş]`, 24 fps kaynak kare indeksleri. Döngülerde bitiş, başlangıçla eşleşen karedir (oynatılmaz) ve aralık adım sayısının katıdır. Verilmezse paket önerilen aralıkla yapılır. |
@@ -157,7 +169,7 @@ Doğrulayıcı bilinmeyen alanları reddeder ve hangi alanın neden yanlış old
 | `loop` | Sabit | En temiz kapanan döngü (boşta durma, nefes). |
 | `transition` | Sabit | Hareketin başladığı kareden durduğu kareye (kıvrılma, oturma, açılış). |
 | `reaction` | Sabit | İlk kareden, ilk duruşa en çok benzeyen kareye kadar (kuyruk sallama, el sallama, göz kırpma). |
-| `still` | — | Başka bir pozun ilk, son ya da belirli bir karesi (uyku). |
+| `still` | — | Başka bir pozun ilk, son ya da belirli bir karesi (uyku), ya da bir görsel (çapadan duruş). |
 
 ## Plan şablonları
 
@@ -165,8 +177,65 @@ Doğrulayıcı bilinmeyen alanları reddeder ve hangi alanın neden yanlış old
 
 - **walking-pet:** `walk` (çapadan) → `curl_up` (walk'un ilk karesinden) → `tail_wag` (curl_up'ın son karesinden) → `sleep` (tail_wag'ın ilk karesi). Giriş `walk`, varış `curl_up` → `sleep`, dokunma `tail_wag`.
 - **character:** `idle` döngüsü (çapadan), `blink` (idle'ın ilk karesinden), `open_app` (çapadan), `on_press` (idle'ın ilk karesinden). Varış `open_app` → `idle`, ara hareket `blink`, dokunma `on_press`.
+- **character-still:** yalnızca görsel: çapadan tek karelik `idle`. Videolu pozlar sonra eklenebilir.
+- **fire:** tek saydam katman `base` (taşlar ya da kaide); alevi uygulamanın motoru çizer.
+- **telescope:** tek saydam katman `body`.
+- **background:** opak `far` (tuvale oturur), önünde saydam `mid` ve `ground`.
+- **sky-theme:** opak `sky`, saydam `nebula` ve `moon`.
 
 Şablon seçildikten sonra pozlar eklenip çıkarılabilir, sıraları ve alanları değiştirilebilir.
+
+## Görsellerden: tek kare ve katmanlı öğeler
+
+Bazı öğeler video gerektirmez. Araç onları da aynı ilkelerle paketler: tek piksel ızgarası, tek ortak palet, kayıpsız WebP, manifest, rapor ve önizleme.
+
+**Görselden tek kare.** `still` pozu `"image": "anchor"` ya da `"image": "idle.png"` alabilir. Görsel, video kareleriyle aynı arka plan temizlemeden geçer. Görsel zaten saydamsa kendi alfası korunur. Görseller çapanın ölçeğinde kabul edilir: çapadaki figür `pixelWidth` sanat pikseli genişliğe iner. Bu, referans pozun ilk karesiyle aynı tanımdır, bu yüzden boyut videolu pozlarla tutarlıdır. Ayak noktası en alt pikseldir. Öğede hiç video yoksa ızgara bu görselden hesaplanır; tek pozlu, yalnızca görselden bir karakter paketi böyle çıkar.
+
+**Katmanlı öğeler.** `poses` yerine ya da onunla birlikte `layers` verilir:
+
+```json
+{
+  "schemaVersion": 2,
+  "id": "fire.campfire-base",
+  "type": "fire",
+  "pixelWidth": 120,
+  "canvas": { "width": 160, "height": 80 },
+  "layers": [
+    { "name": "base", "image": "base.png", "key": true, "pivot": { "x": 0.5, "y": 1 }, "z": 0 }
+  ],
+  "manifest": {
+    "effects": [{ "type": "flame", "origin": { "x": 0.5, "y": 0.55 } }],
+    "assets": { "sounds": { "touch": "crackle.mp3" } }
+  }
+}
+```
+
+| Katman alanı | Anlamı |
+|---|---|
+| `name` | snake_case, tekil. Pozlar varsa `root` ayrılmıştır. |
+| `image` | Öğe klasöründe PNG, JPG ya da WebP. |
+| `key` | `true`: düz arka plan temizlenir, saydam sprite olur. `false`: görsel olduğu gibi kalır (opak arka plan). Verilmezse türün varsayılanı. Görsel zaten saydamsa alfa her durumda korunur. |
+| `pivot` | İsteğe bağlı, 0–1, figürün kutusuna göre. Manifest'e katman görseline göre yazılır. |
+| `z` | Çizim sırası; verilmezse listedeki sırası. |
+
+- Bütün katmanlar tek ölçekle küçültülür (en yakın komşu), böylece üst üste otururlar. `canvas` verilmişse ve opak (`key: false`) bir katman varsa, o katman tuval genişliğine iner. Yoksa ilk katmanın figürü `pixelWidth` sanat pikseli olur. Pozlarla birlikteyse katmanlar da çapanın ölçeğindedir.
+- Katmanlar ortak kutularına kırpılır ve aynı boyutta yazılır. Tamamı saydam sprite olan öğelerde 1 piksel saydam kenar bırakılır; görselin hiçbir kenar pikseli opak kalmaz.
+- Manifest'e `assets.images`, `layers` (`z`, `pivot`), `size` (pt) ve `anchor` yazılır. `anchor` ayak noktasıdır ve türden gelir (sprite'larda alt orta).
+- `canvas` bir sınırdır, zorlama değildir: figür ya da katman tuvali aşarsa veya opak katman tuvalle aynı boyutta değilse paket yine üretilir, raporda ölçüyle uyarı yer alır.
+
+**Türler.** `templates/types/<tür>.json` yalnızca varsayılanları taşır: katmanların `key` değeri ve katmanlı öğenin `anchor`'ı. Tür kodda davranış dalı açmaz; yeni bir tür için bir JSON dosyası eklemek yeterlidir.
+
+**Manifest aktarımı.** `item.json`'daki `manifest` nesnesi (`effects`, `onPress`, `groundShadow`, `reflection`, `galaxyBlend`, `idle`…) üretilen manifest'e olduğu gibi eklenir. Araç bu alanları yorumlamaz; denetim hedef uygulamanın doğrulayıcısındadır. Aracın yazdığı alanlar (`assets`, `layers`, `poses`, `size`, `anchor`, `id`, `name`, `version`, `type`…) buradan ezilemez; denenirse doğrulama alanın adını söyler. `assets` yalnızca aracın yazmadığı girişleri alabilir (`sounds` gibi); ses dosyalarını araç kopyalamaz. `behavior` ile aynı alanı (örneğin `onPress`) iki yerden vermek de hatadır.
+
+## Dışa aktarma
+
+`make` yalnızca öğe klasörüne yazar. Paketi başka bir projeye taşımak için:
+
+```bash
+node core/cli.mjs export items/fox/item.json --to ../app/assets/items   # ya da item.json'da "export"
+```
+
+Paket `<hedef>/<id>/` altına kopyalanır: manifest'in listelediği dosyalar, `manifest.json` ve `report.json` (bu makineye ait yollar çıkarılmış olarak). Hedefte aynı id'li eski bir paket varsa yalnızca onun kendi dosyaları güncellenir ya da silinir; başka dosyalara dokunulmaz. Klasör boş değil ve bu öğenin paketi değilse işlem reddedilir. Paket güncel değilse yine aktarılır, ama komut satırı ve arayüz bunu bildirir. Arayüzde paket sayfasındaki "Dışa aktar" bölümü aynı işi yapar ve hedefi `item.json`'a `export` olarak kaydeder.
 
 ## Video promptu
 
@@ -192,7 +261,7 @@ Not: Video modellerinin güvenlik filtreleri bazı masum kalıplarda isteği red
 5. Her kare çapa noktası ve zemin hattına göre yerleştirilir. Takip eden kamerada zemin her karenin en alt pikselidir; sabit kamerada kameranın zeminidir. `startsFrom` ile pozlar birbirinin devamı olur.
 6. Kareler kırpılır, tek atlasa paketlenir (kayıpsız WebP), manifest ve önizleme yazılır.
 
-Bütçe: kare dizili öğeler için paket ≤500 KB, atlas kenarı ≤2048 piksel. Aşılırsa rapor uyarır.
+Bütçe: kare dizili öğeler için paket ≤500 KB, kare dizisi olmayanlar (yalnızca tek kare ya da katman) için ≤150 KB; atlas kenarı ≤2048 piksel. Aşılırsa rapor uyarır.
 
 ## Loglar
 
@@ -203,6 +272,6 @@ Her işlem ve hata (beklenmeyen hatalarda tam yığın iziyle) hem terminale hem
 ```
 core/        Node çekirdeği: cli.mjs, server.mjs, lib/
 web/         arayüz (düz HTML, CSS, JS; derleme adımı yok)
-templates/   plan şablonları (plans/) ve video promptu şablonu
-examples/    örnek item.json (gölge kurdu)
+templates/   plan şablonları (plans/), türler (types/) ve video promptu şablonu
+examples/    örnek öğeler: gölge kurdu (videolu), kamp ateşi tabanı (katmanlı)
 ```

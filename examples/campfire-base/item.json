@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "id": "fire.campfire-base",
+  "name": { "en": "Campfire Base", "tr": "Kamp Ateşi Tabanı" },
+  "type": "fire",
+  "template": "fire",
+  "pixelWidth": 120,
+  "ptPerPixel": 1,
+  "colors": 16,
+  "canvas": { "width": 160, "height": 80 },
+  "layers": [
+    { "name": "base", "image": "base.png", "key": true, "pivot": { "x": 0.5, "y": 1 }, "z": 0 }
+  ],
+  "manifest": {
+    "effects": [
+      { "type": "flame", "origin": { "x": 0.5, "y": 0.55 }, "colors": ["#ffcf6b", "#ff8a3d"], "height": 1.6 }
+    ],
+    "onPress": [{ "action": "effect", "type": "burst", "count": 24 }],
+    "assets": { "sounds": { "touch": "crackle.mp3" } }
+  }
+}

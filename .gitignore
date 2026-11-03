@@ -8,5 +8,8 @@ config.local.json
 examples/*/videos/
 examples/*/start-frames/
 examples/*/anchor.*
+examples/*/*.png
+examples/*/*.jpg
+examples/*/*.webp
 examples/*/logs/
 CLAUDE.local.md
