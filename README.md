@@ -189,7 +189,7 @@ Doğrulayıcı bilinmeyen alanları reddeder ve hangi alanın neden yanlış old
 
 Bazı öğeler video gerektirmez. Araç onları da aynı ilkelerle paketler: tek piksel ızgarası, tek ortak palet, kayıpsız WebP, manifest, rapor ve önizleme.
 
-**Görselden tek kare.** `still` pozu `"image": "anchor"` ya da `"image": "idle.png"` alabilir. Görsel, video kareleriyle aynı arka plan temizlemeden geçer. Görsel zaten saydamsa kendi alfası korunur. Görseller çapanın ölçeğinde kabul edilir: çapadaki figür `pixelWidth` sanat pikseli genişliğe iner. Bu, referans pozun ilk karesiyle aynı tanımdır, bu yüzden boyut videolu pozlarla tutarlıdır. Ayak noktası en alt pikseldir. Öğede hiç video yoksa ızgara bu görselden hesaplanır; tek pozlu, yalnızca görselden bir karakter paketi böyle çıkar.
+**Görselden tek kare.** `still` pozu `"image": "anchor"` ya da `"image": "idle.png"` alabilir. Görsel, video kareleriyle aynı arka plan temizlemeden geçer. Görsel zaten saydamsa kendi alfası korunur. Görseller çapanın ölçeğinde kabul edilir: çapadaki figür `pixelWidth` sanat pikseli genişliğe iner. Bu, referans pozun ilk karesiyle aynı tanımdır, bu yüzden boyut videolu pozlarla tutarlıdır. Ayak noktası en alt pikseldir. Zeminin altına sarkan bir parça yoksa zemine değen satır tuvalin en alt satırıdır ve `anchor.y` 1'dir; yalnızca sarkan parça (örneğin kurdun kuyruğu) tuvalin altında pay bırakır. Öğede hiç video yoksa ızgara bu görselden hesaplanır; tek pozlu, yalnızca görselden bir karakter paketi böyle çıkar.
 
 **Katmanlı öğeler.** `poses` yerine ya da onunla birlikte `layers` verilir:
 
@@ -219,8 +219,8 @@ Bazı öğeler video gerektirmez. Araç onları da aynı ilkelerle paketler: tek
 | `z` | Çizim sırası; verilmezse listedeki sırası. |
 
 - Bütün katmanlar tek ölçekle küçültülür (en yakın komşu), böylece üst üste otururlar. `canvas` verilmişse ve opak (`key: false`) bir katman varsa, o katman tuval genişliğine iner. Yoksa ilk katmanın figürü `pixelWidth` sanat pikseli olur. Pozlarla birlikteyse katmanlar da çapanın ölçeğindedir.
-- Katmanlar ortak kutularına kırpılır ve aynı boyutta yazılır. Tamamı saydam sprite olan öğelerde 1 piksel saydam kenar bırakılır; görselin hiçbir kenar pikseli opak kalmaz.
-- Manifest'e `assets.images`, `layers` (`z`, `pivot`), `size` (pt) ve `anchor` yazılır. `anchor` ayak noktasıdır ve türden gelir (sprite'larda alt orta).
+- Katmanlar ortak kutularına kırpılır ve aynı boyutta yazılır. Tamamı saydam sprite olan öğelerde solda, sağda ve üstte 1 piksel saydam pay bırakılır; altta pay yoktur, zemine değen satır görselin en alt satırıdır.
+- Manifest'e `assets.images`, `layers` (`z`, `pivot`), `size` (pt) ve `anchor` yazılır. `anchor` ayak noktasıdır ve türden gelir (sprite'larda alt orta, `y` = 1).
 - `canvas` bir sınırdır, zorlama değildir: figür ya da katman tuvali aşarsa veya opak katman tuvalle aynı boyutta değilse paket yine üretilir, raporda ölçüyle uyarı yer alır.
 
 **Türler.** `templates/types/<tür>.json` yalnızca varsayılanları taşır: katmanların `key` değeri ve katmanlı öğenin `anchor`'ı. Tür kodda davranış dalı açmaz; yeni bir tür için bir JSON dosyası eklemek yeterlidir.

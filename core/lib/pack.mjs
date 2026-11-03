@@ -8,7 +8,7 @@ import { measure } from './util.mjs';
 const GAP = 2;
 
 // frames: [{ name, file, anchorX, ground }] in art px of the pixelized grid.
-// Returns { canvas: { w, h }, groundRow, sprites: [{ name, x, y, w, h, offX, offY }], atlas: Buffer, atlasSize }
+// Returns { canvas: { w, h }, groundRow, anchorY, sprites: [{ name, x, y, w, h, offX, offY }], atlas: Buffer, atlasSize }
 export async function pack(frames, { margin = 2, maxWidth = 2048, minCanvas = null } = {}) {
   for (const fr of frames) {
     const { data, info } = await sharp(fr.file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -22,10 +22,15 @@ export async function pack(frames, { margin = 2, maxWidth = 2048, minCanvas = nu
     up = Math.max(up, ground - m.minY);
     down = Math.max(down, m.maxY + 1 - ground);
   }
-  let w = 2 * Math.ceil(half + margin), h = Math.ceil(up + Math.max(down, 0) + 2 * margin);
+  // A frame's ground is its lowest pixel row, so down is 1 unless something hangs below the
+  // ground (a tail swinging down). Then the canvas keeps room under the ground line; otherwise the
+  // row on the ground is the canvas's last row and the anchor sits on its bottom edge (y = 1).
+  const sags = down > 1;
+  let w = 2 * Math.ceil(half + margin), h = sags ? Math.ceil(up + down + 2 * margin) : Math.ceil(up + 1 + margin);
   if (minCanvas) { w = Math.max(w, minCanvas.w); h = Math.max(h, minCanvas.h); }
   if (w % 2) w++;
-  const groundRow = h - margin - Math.ceil(Math.max(down, 0));
+  const groundRow = sags ? h - margin - Math.ceil(down) : h - 1;
+  const anchorY = sags ? groundRow / h : 1;
 
   const sprites = [];
   for (const fr of frames) {
@@ -49,7 +54,7 @@ export async function pack(frames, { margin = 2, maxWidth = 2048, minCanvas = nu
     .webp({ lossless: true, effort: 6 })
     .toBuffer();
   return {
-    canvas: { w, h }, groundRow, atlas, atlasSize,
+    canvas: { w, h }, groundRow, anchorY, atlas, atlasSize,
     sprites: sprites.map(({ name, x, y, w, h, offX, offY }) => ({ name, x, y, w, h, offX, offY })),
   };
 }

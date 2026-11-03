@@ -132,7 +132,7 @@ export async function make(item, { out } = {}) {
   const size = packed
     ? { width: packed.canvas.w * ptPerPixel, height: packed.canvas.h * ptPerPixel }
     : { width: images.box.w * ptPerPixel, height: images.box.h * ptPerPixel };
-  const anchor = packed ? { x: 0.5, y: round(packed.groundRow / packed.canvas.h, 4) } : images.anchor;
+  const anchor = packed ? { x: 0.5, y: round(packed.anchorY, 4) } : images.anchor;
   const manifest = buildManifest(item, { size, anchor, atlas, images, ptPerPixel, factor });
   const files = [...(atlas ? [atlas.image, atlas.map] : []), ...(images ? images.list.map((l) => l.file) : [])];
   manifest.files = Object.fromEntries(files.map((f) => [f, sha256(path.join(outDir, f))]));
@@ -180,22 +180,23 @@ async function layersFactor(item, layers, poses) {
 
 // Every layer is cropped to the box around all of them, so they keep their places relative to
 // each other and can be drawn on top of each other at the same origin. Sprites (no full layer)
-// keep a 1 px transparent margin, so no image edge holds an opaque pixel; anchor and pivots are
-// given on the figure's box and moved onto the image with its margin.
+// keep a 1 px transparent margin left, right and on top; the row on the ground stays the last
+// row, so the anchor at the bottom is y = 1. Anchor and pivots are given on the figure's box and
+// moved onto the image with its margin.
 async function writeLayers(outDir, base, layers, anchor) {
   const m = layers.some((l) => !l.__key) ? 0 : 1;
   const x0 = Math.min(...layers.map((l) => l.__m.minX)), y0 = Math.min(...layers.map((l) => l.__m.minY));
   const x1 = Math.max(...layers.map((l) => l.__m.maxX)) + 1, y1 = Math.max(...layers.map((l) => l.__m.maxY)) + 1;
-  const box = { w: x1 - x0 + 2 * m, h: y1 - y0 + 2 * m };
-  const onImage = (p) => ({ x: round((m + p.x * (box.w - 2 * m)) / box.w, 4), y: round((m + p.y * (box.h - 2 * m)) / box.h, 4) });
+  const box = { w: x1 - x0 + 2 * m, h: y1 - y0 + m };
+  const onImage = (p) => ({ x: round((m + p.x * (box.w - 2 * m)) / box.w, 4), y: round((m + p.y * (box.h - m)) / box.h, 4) });
   const list = [];
   for (const [i, l] of layers.entries()) {
     const file = `${base}-${l.name.replace(/_/g, '-')}.webp`;
-    await sharp(l.__px)
-      .extend({ top: m, left: m, right: Math.max(0, x1 + m - l.__w), bottom: Math.max(0, y1 + m - l.__h), background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .extract({ left: x0, top: y0, width: box.w, height: box.h })
-      .webp({ lossless: true, effort: 6 })
-      .toFile(path.join(outDir, file));
+    // Two passes: within one sharp pipeline extract runs before extend.
+    const padded = await sharp(l.__px)
+      .extend({ top: m, left: m, right: Math.max(0, x1 + m - l.__w), bottom: Math.max(0, y1 - l.__h), background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png().toBuffer();
+    await sharp(padded).extract({ left: x0, top: y0, width: box.w, height: box.h }).webp({ lossless: true, effort: 6 }).toFile(path.join(outDir, file));
     list.push({ name: l.name, file, z: l.z ?? i, pivot: l.pivot ? onImage(l.pivot) : null, w: box.w, h: box.h,
       kb: round(fs.statSync(path.join(outDir, file)).size / 1024), mode: l.__image.mode });
   }

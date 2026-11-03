@@ -48,11 +48,12 @@ node core/cli.mjs export <item.json> --to <dir>          # copy the package to <
 - ffmpeg decoding is deterministic: explicit YUV matrix and range (tags, else BT.709 from 720 lines, BT.601 below; limited range), bitexact flags. Cache layout: `<item>/.pixel-cache/<video>-<hash>/src|key|info.json|analysis.json`.
 - One pixel grid and one palette per item, across all poses and layers. Never quantise per frame (colour flicker). Video frames are downscaled with a cubic kernel, images with nearest.
 - Images (still `image`, layers next to poses) are at the anchor's scale: the anchor's figure is `pixelWidth` art px wide. Without videos the grid comes from the images. Layers share one scale: a full (`key: false`) layer fits `canvas.width` when given, else the first layer's figure is `pixelWidth` wide.
-- Layers are cropped to their common box; all-sprite items keep a 1 px transparent margin (no opaque edge pixel). `canvas` only warns, it never crops or scales.
+- Ground row: when nothing hangs below the ground, the row on the ground is the canvas's (or layer image's) last row and `anchor.y` is 1. Only something swinging below the ground (the wolf's tail) leaves room under it and gives `anchor.y` < 1.
+- Layers are cropped to their common box; all-sprite items keep a 1 px transparent margin left, right and on top, none at the bottom. `canvas` only warns, it never crops or scales.
 - Item types (`templates/types/`) only give defaults; no code branches on a type. Budget follows content: frame sequences ≤500 KB, otherwise ≤150 KB.
 - `manifest` in item.json is copied into the package manifest uninterpreted; generated fields cannot be set there (`assets` may only gain entries such as `sounds`).
 - Locomotion = tracking camera: anchor x = mean centroid, ground = each frame's lowest pixel; stride = ground speed × loop length / factor × ptPerPixel.
-- Fixed-camera poses: anchor and ground from the first frame, or continued from the `startsFrom` frame of the source pose; transitions ease the ground to the final lowest pixel.
+- Fixed-camera poses (and still images): anchor and ground from the first frame, or continued from the `startsFrom` frame of the source pose; transitions ease the ground to the final lowest pixel.
 - `startsFrom` drives both the start frame for the video model and the placement in the package. Start frame sidecars (`start-frames/<pose>.json`) record their source; a mismatch means stale.
 - A pose's video defaults to `videos/<pose>.<mp4|mov|m4v|webm>`, so saving a file there is enough.
 - `status` never extracts frames (it reads cached analysis only); it must stay cheap.
