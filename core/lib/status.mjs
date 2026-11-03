@@ -26,7 +26,8 @@ export function poseStatus(item, p, done) {
   const analysis = cachedAnalysis(item, p);
   const r = analysis ? effectiveRange(p, analysis) : { range: p.range ?? null, explicit: !!p.range, suggestion: null };
   const s = { name: p.name, kind: p.kind, fps: p.fps ?? 12, startsFrom: p.startsFrom, video: video.rel, hasVideo: video.exists,
-    startFrame: { state: startFrame.state, file: startFrame.file ?? null, blocked: startFrame.blocked ?? null },
+    startFrame: { state: startFrame.state, file: startFrame.file ?? null, blocked: startFrame.blocked ?? null, madeAt: startFrame.made?.madeAt ?? null,
+      made: startFrame.made ? { background: startFrame.made.background, sourceFrame: startFrame.made.sourceFrame ?? null } : null },
     promptMissing: missing, range: p.range ?? null, suggested: r.suggestion ? [r.suggestion.start, r.suggestion.end] : null, frames: analysis?.frames.length ?? null };
   if (video.exists) {
     s.stage = p.range ? 'done' : 'range';

@@ -246,7 +246,7 @@ route('POST', /^\/api\/items\/([^/]+)\/make$/, ({ dir }) => runJob(dir, 'make pa
 route('GET', /^\/api\/items\/([^/]+)\/report$/, ({ dir }) => {
   const item = loadAt(dir);
   const file = path.join(dir, item.output ?? `build/${item.id}`, 'report.json');
-  if (!fs.existsSync(file)) throw new HttpError(404, 'no package has been made yet');
+  if (!fs.existsSync(file)) return { report: null }; // not made yet: a state, not an error
   const report = JSON.parse(fs.readFileSync(file, 'utf8'));
   return { report, base: path.relative(dir, path.dirname(file)) };
 });

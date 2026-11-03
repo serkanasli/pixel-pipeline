@@ -5,7 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import { keyDir } from './key.mjs';
-import { progress } from './log.mjs';
+import { progress, UserError } from './log.mjs';
 import { fileKey, listFrames } from './util.mjs';
 
 export const SOURCE_FPS = 24; // every clip is sampled at 24 fps; poses take every 2nd (12 fps) or 3rd (8 fps) frame
@@ -25,17 +25,27 @@ export function ffmpegTools() {
   };
   const ffmpeg = find('ffmpeg'), ffprobe = find('ffprobe');
   if (!ffmpeg || !ffprobe) {
-    throw new Error(`${!ffmpeg ? 'ffmpeg' : 'ffprobe'} not found on PATH. Install ffmpeg (it ships ffprobe): macOS "brew install ffmpeg", Debian/Ubuntu "sudo apt install ffmpeg"`);
+    throw new UserError(`${!ffmpeg ? 'ffmpeg' : 'ffprobe'} not found on PATH. Install ffmpeg (it ships ffprobe): macOS "brew install ffmpeg", Debian/Ubuntu "sudo apt install ffmpeg"`);
   }
   return (tools = { ffmpeg, ffprobe });
+}
+
+// A video ffmpeg cannot read is the user's to fix: say which file and what ffmpeg reported.
+async function tool(bin, args, video) {
+  try { return await run(bin, args, { maxBuffer: 16 << 20 }); }
+  catch (e) {
+    if (e.code === 'ENOENT' || e.stderr === undefined) throw e;
+    const why = String(e.stderr).trim().split('\n').pop().replace(/^\[[^\]]*\]\s*/, '').replace(`${video}: `, '');
+    throw new UserError(`cannot read video ${path.basename(video)}: ${why || `${path.basename(bin)} exited with code ${e.code}`}`);
+  }
 }
 
 // Duration, nominal fps, display size and colour tags of the first video stream.
 export async function probe(video) {
   const { ffprobe } = ffmpegTools();
-  const { stdout } = await run(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries',
+  const { stdout } = await tool(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries',
     'stream=width,height,avg_frame_rate,r_frame_rate,color_space,color_range,duration:stream_side_data=rotation:format=duration',
-    '-of', 'json', video]);
+    '-of', 'json', video], video);
   const j = JSON.parse(stdout), s = j.streams?.[0];
   if (!s) throw new Error(`no video stream in ${video}`);
   const rate = (r) => { const [a, b] = String(r ?? '0/1').split('/').map(Number); return b ? a / b : 0; };
@@ -79,8 +89,8 @@ export async function extract(video, cacheRoot) {
     `scale=in_color_matrix=${conv.matrix}:in_range=${conv.range}:out_color_matrix=${conv.matrix}:out_range=pc:flags=accurate_rnd+full_chroma_int+bitexact`,
     'format=rgb24',
   ].join(',');
-  await run(ffmpeg, ['-v', 'error', '-nostdin', '-i', video, '-map', '0:v:0', '-an', '-sn', '-vf', vf,
-    '-fflags', '+bitexact', '-flags', '+bitexact', '-start_number', '0', path.join(src, 'f%03d.png')], { maxBuffer: 16 << 20 });
+  await tool(ffmpeg, ['-v', 'error', '-nostdin', '-i', video, '-map', '0:v:0', '-an', '-sn', '-vf', vf,
+    '-fflags', '+bitexact', '-flags', '+bitexact', '-start_number', '0', path.join(src, 'f%03d.png')], video);
   const files = listFrames(src);
   if (!files.length) throw new Error(`ffmpeg wrote no frames for ${video}`);
   await contactSheet(src, files);

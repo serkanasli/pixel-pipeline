@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Pipeline</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath fill='%23c8642a' d='M1 1h3v3H1zM4 4h3v3H4z'/%3E%3C/svg%3E">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/">Pixel Pipeline</a>
+  <span id="job" class="job" hidden></span>
+  <span id="offline" class="offline" hidden>Sunucu bağlantısı yok, yeniden deneniyor…</span>
+</header>
+<nav id="steps" class="steps" aria-label="Adımlar"></nav>
+<div id="next" class="next" role="status" hidden></div>
+<main id="view" class="view"></main>
+<section id="logs" class="logs" aria-label="Log">
+  <button id="logToggle" class="log-toggle" type="button" aria-expanded="false" aria-controls="logBody"><span id="logTitle">Log</span></button>
+  <div id="logBody" class="log-body"><ol id="logLines"></ol></div>
+</section>
+<div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
