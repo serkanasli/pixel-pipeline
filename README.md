@@ -176,8 +176,8 @@ Doğrulayıcı bilinmeyen alanları reddeder ve hangi alanın neden yanlış old
 `templates/plans/*.json` dosyalarında veri olarak durur. Kodda öğeye ya da şablona özel bir kural yoktur. Yeni bir şablon için bir JSON dosyası eklemek yeterlidir.
 
 - **walking-pet:** `walk` (çapadan) → `curl_up` (walk'un ilk karesinden) → `tail_wag` (curl_up'ın son karesinden) → `sleep` (tail_wag'ın ilk karesi). Giriş `walk`, varış `curl_up` → `sleep`, dokunma `tail_wag`.
-- **character:** `idle` döngüsü (çapadan), `blink` (idle'ın ilk karesinden), `open_app` (çapadan), `on_press` (idle'ın ilk karesinden). Varış `open_app` → `idle`, ara hareket `blink`, dokunma `on_press`.
-- **character-still:** yalnızca görsel: çapadan tek karelik `idle`. Videolu pozlar sonra eklenebilir.
+- **character:** sağa bakar (ateşe dönük). `idle` döngüsü (çapadan), `blink` (idle'ın ilk karesinden), `open_app` (çapadan), `on_press` (idle'ın ilk karesinden). Varış `open_app` → `idle`, ara hareket `blink`, dokunma `on_press`.
+- **character-still:** sağa bakar; yalnızca görsel: çapadan tek karelik `idle`. Videolu pozlar sonra eklenebilir.
 - **fire:** tek saydam katman `base` (taşlar ya da kaide); alevi uygulamanın motoru çizer.
 - **telescope:** tek saydam katman `body`.
 - **background:** opak `far` (tuvale oturur), önünde saydam `mid` ve `ground`.

@@ -6,7 +6,7 @@
   },
   "type": "character",
   "item": {
-    "facing": "left",
+    "facing": "right",
     "style": "Pixel art, crisp square pixels, no anti-aliasing, no blur, no gradients, limited palette, 1-pixel dark outline, flat shadow tones.",
     "pixelWidth": 96,
     "ptPerPixel": 1,
