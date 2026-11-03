@@ -13,7 +13,8 @@ export function progress(step, detail = '') {
 }
 
 export const frameName = (i) => `f${String(i).padStart(3, '0')}.png`;
-export const listFrames = (dir) => fs.readdirSync(dir).filter((f) => /^f\d+\.png$/.test(f)).sort();
+// Numeric order: clips longer than 1000 frames get f1000.png, which sorts before f101.png as text.
+export const listFrames = (dir) => fs.readdirSync(dir).filter((f) => /^f\d+\.png$/.test(f)).sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
 
 export function fileKey(file) {
   const st = fs.statSync(file);
