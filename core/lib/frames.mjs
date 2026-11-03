@@ -44,7 +44,7 @@ async function tool(bin, args, video) {
 export async function probe(video) {
   const { ffprobe } = ffmpegTools();
   const { stdout } = await tool(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries',
-    'stream=width,height,avg_frame_rate,r_frame_rate,color_space,color_range,duration:stream_side_data=rotation:format=duration',
+    'stream=width,height,avg_frame_rate,r_frame_rate,color_space,color_range,duration:stream_side_data_list:format=duration',
     '-of', 'json', video], video);
   const j = JSON.parse(stdout), s = j.streams?.[0];
   if (!s) throw new Error(`no video stream in ${video}`);

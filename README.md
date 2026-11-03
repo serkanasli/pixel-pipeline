@@ -20,7 +20,7 @@ Aynı öğe klasörleri üzerinde iki taraf çalışır: bir kişi tarayıcıdak
 
 ## Kurulum
 
-Gerekenler: **Node 20+** ve **ffmpeg** (ffprobe ile birlikte gelir).
+Gerekenler: **Node 20+** ve **ffmpeg 4.4+** (ffprobe ile birlikte gelir).
 
 ```bash
 brew install ffmpeg          # macOS
