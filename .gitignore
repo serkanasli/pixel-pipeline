@@ -13,3 +13,4 @@ examples/*/start-frames/
 examples/*/anchor.*
 examples/*/logs/
 CLAUDE.local.md
+config.local.json

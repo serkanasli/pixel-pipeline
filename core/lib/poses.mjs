@@ -7,18 +7,15 @@ import { analyzeClip, groundSpeed } from './analyze.mjs';
 import { extract, SOURCE_FPS } from './frames.mjs';
 import { UserError } from './log.mjs';
 import { LOOPING } from './schema.mjs';
-import { fileKey, round } from './util.mjs';
+import { fileKey, resolveInside, round } from './util.mjs';
 
 export const VIDEO_EXTS = ['.mp4', '.mov', '.m4v', '.webm'];
 export const DEFAULT_PIXEL_WIDTH = 170;
 
 // A path from item.json, resolved inside the item folder; never outside it (symlinks included).
 export function itemPath(item, rel) {
-  const abs = path.resolve(item.__dir, rel);
-  const rootReal = fs.realpathSync(item.__dir);
-  let real = abs;
-  try { real = fs.realpathSync(abs); } catch { real = path.join(rootReal, path.relative(item.__dir, abs)); }
-  if (real !== rootReal && !real.startsWith(rootReal + path.sep)) throw new UserError(`path leaves the item folder: ${rel}`);
+  const abs = resolveInside(item.__dir, rel);
+  if (!abs) throw new UserError(`path leaves the item folder: ${rel}`);
   return abs;
 }
 

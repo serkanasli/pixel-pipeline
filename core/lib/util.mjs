@@ -13,6 +13,18 @@ export function fileKey(file) {
   return crypto.createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}`).digest('hex').slice(0, 10);
 }
 
+// `rel` resolved inside `root`; throws when it would leave it, symlinks included. Paths that do
+// not exist yet are checked through their nearest existing parent.
+export function resolveInside(root, rel) {
+  const abs = path.resolve(root, rel);
+  const rootReal = fs.realpathSync(root);
+  let probe = abs, rest = '';
+  while (!fs.existsSync(probe) && probe !== path.dirname(probe)) { rest = path.join(path.basename(probe), rest); probe = path.dirname(probe); }
+  const real = path.join(fs.realpathSync(probe), rest);
+  if (real !== rootReal && !real.startsWith(rootReal + path.sep)) return null;
+  return abs;
+}
+
 export const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
 // Opaque bounding box, centroid and lowest opaque row of an RGBA buffer.

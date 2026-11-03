@@ -7,6 +7,9 @@
   "bin": {
     "pixel-pipeline": "core/cli.mjs"
   },
+  "scripts": {
+    "start": "node core/server.mjs"
+  },
   "engines": {
     "node": ">=20"
   },
