@@ -1,20 +1,54 @@
 {
+  "schemaVersion": 2,
   "id": "pet.shadow-wolf",
   "name": { "en": "Shadow Wolf", "tr": "Gölge Kurdu" },
   "type": "pet",
   "facing": "left",
+  "template": "walking-pet",
+  "anchor": "anchor.png",
+  "subject": "a slate-grey shadow wolf with a shaggy dark mane, amber eyes and dark smoke wisps trailing from its mane, back and tail",
+  "persistentDetails": [
+    "the dark smoke wisps trailing from the mane, back and tail",
+    "the warm orange rim light along the chest and legs",
+    "the amber eyes"
+  ],
+  "style": "Pixel art, crisp square pixels, no anti-aliasing, no blur, no gradients, limited palette, 1-pixel dark outline, flat shadow tones, one warm orange rim light.",
   "pixelWidth": 172,
   "ptPerPixel": 1,
   "colors": 24,
   "poses": [
-    { "name": "walk", "kind": "locomotion", "video": "videos/pixel-wolf-walk-360p-1.mp4", "fps": 12 },
-    { "name": "curl_up", "kind": "transition", "video": "videos/pixel-wolf-curl-up-360p-1.mp4", "fps": 12 },
-    { "name": "tail_wag", "kind": "reaction", "video": "videos/pixel-wolf-tail-wag-360p-1.mp4", "fps": 12, "startsFrom": "curl_up" },
-    { "name": "sleep", "kind": "still", "from": "tail_wag", "frame": "first" }
+    {
+      "name": "walk",
+      "kind": "locomotion",
+      "fps": 12,
+      "startsFrom": "anchor",
+      "motion": "It walks at a calm, steady pace with a natural gait, one full stride after another, head level and tail relaxed.",
+      "video": "videos/pixel-wolf-walk-360p-1.mp4",
+      "range": [42, 74]
+    },
+    {
+      "name": "curl_up",
+      "kind": "transition",
+      "fps": 12,
+      "startsFrom": { "pose": "walk", "frame": "first" },
+      "motion": "It stops walking, slowly lies down and curls up into a sleeping ball with the tail wrapped around the body, closes its eyes and then stays still.",
+      "video": "videos/pixel-wolf-curl-up-360p-1.mp4",
+      "range": [2, 93]
+    },
+    {
+      "name": "tail_wag",
+      "kind": "reaction",
+      "fps": 12,
+      "startsFrom": { "pose": "curl_up", "frame": "last" },
+      "motion": "Still curled up with eyes closed, it gently wags the tail a few times and then lays the tail back exactly where it started.",
+      "video": "videos/pixel-wolf-tail-wag-360p-1.mp4",
+      "range": [0, 86]
+    },
+    {
+      "name": "sleep",
+      "kind": "still",
+      "startsFrom": { "pose": "tail_wag", "frame": "first" }
+    }
   ],
-  "behavior": {
-    "enter": "walk",
-    "arrive": ["curl_up", "sleep"],
-    "onPress": "tail_wag"
-  }
+  "behavior": { "enter": "walk", "arrive": ["curl_up", "sleep"], "onPress": "tail_wag" }
 }

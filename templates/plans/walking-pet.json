@@ -1,0 +1,44 @@
+{
+  "title": { "en": "Walking pet", "tr": "Yürüyen evcil hayvan" },
+  "description": {
+    "en": "Walks in, curls up and sleeps; wags its tail when tapped.",
+    "tr": "Yürüyerek gelir, kıvrılıp uyur; dokununca kuyruğunu sallar."
+  },
+  "type": "pet",
+  "item": {
+    "facing": "left",
+    "style": "Pixel art, crisp square pixels, no anti-aliasing, no blur, no gradients, limited palette, 1-pixel dark outline, flat shadow tones.",
+    "pixelWidth": 172,
+    "ptPerPixel": 1,
+    "colors": 24
+  },
+  "poses": [
+    {
+      "name": "walk",
+      "kind": "locomotion",
+      "fps": 12,
+      "startsFrom": "anchor",
+      "motion": "It walks at a calm, steady pace with a natural gait, one full stride after another, head level and tail relaxed."
+    },
+    {
+      "name": "curl_up",
+      "kind": "transition",
+      "fps": 12,
+      "startsFrom": { "pose": "walk", "frame": "first" },
+      "motion": "It stops walking, slowly lies down and curls up into a sleeping ball with the tail wrapped around the body, closes its eyes and then stays still."
+    },
+    {
+      "name": "tail_wag",
+      "kind": "reaction",
+      "fps": 12,
+      "startsFrom": { "pose": "curl_up", "frame": "last" },
+      "motion": "Still curled up with eyes closed, it gently wags the tail a few times and then lays the tail back exactly where it started."
+    },
+    {
+      "name": "sleep",
+      "kind": "still",
+      "startsFrom": { "pose": "tail_wag", "frame": "first" }
+    }
+  ],
+  "behavior": { "enter": "walk", "arrive": ["curl_up", "sleep"], "onPress": "tail_wag" }
+}

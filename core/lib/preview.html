@@ -68,6 +68,7 @@ ul { margin: 0; padding-left: 18px; }
   const CW = A.meta.sourceSize.w / S, CH = A.meta.sourceSize.h / S; // canvas in pt
   const poses = M.poses, loco = M.locomotion, restPose = M.arrive.at(-1)?.pose;
   const press = M.onPress.find((a) => a.pose);
+  const occasional = M.occasional ?? [];
   const $ = (id) => document.getElementById(id);
   const canvas = $('c'), ctx = canvas.getContext('2d');
   const img = new Image();
@@ -79,8 +80,8 @@ ul { margin: 0; padding-left: 18px; }
   const G = { paused: false, speed: 1, zoom: 2, guides: true };
   const st = { mode: 'idle', pose: restPose ?? Object.keys(poses)[0], t: 0, x: 0, dist: 0, queue: [], returnTo: null, frame: null };
 
-  // ---------- state machine: enter -> arrive -> rest, onPress returns to rest ----------
-  function playQueue(list, then) { st.queue = [...list]; st.after = then; nextInQueue(); }
+  // ---------- state machine: enter -> arrive -> rest, onPress and occasional return to rest ----------
+  function playQueue(list, then) { st.queue = [...list]; st.after = then; st.occIn = null; nextInQueue(); }
   function nextInQueue() {
     const p = st.queue.shift();
     if (!p) { st.mode = st.after ?? 'rest'; if (st.mode === 'rest' && restPose) setPose(restPose); return; }
@@ -89,7 +90,20 @@ ul { margin: 0; padding-left: 18px; }
   function setPose(p) { st.pose = p; st.t = 0; st.frame = poses[p].frames[0]; }
   function enter() { st.x = W / G.zoom + CW; st.dist = 0; st.mode = 'walk'; setPose(loco.pose); }
   function arrive() { st.x = slotX(); playQueue(M.arrive.map((a) => a.pose), 'rest'); }
-  function tap() { if (press && (st.mode === 'rest' || st.mode === 'loopRest')) { st.returnTo = press.returnTo ?? restPose; playQueue([press.pose], 'return'); } }
+  const resting = () => st.mode === 'rest' || st.mode === 'loopRest';
+  function tap() { if (press && resting()) { st.returnTo = press.returnTo ?? restPose; playQueue([press.pose], 'return'); } }
+  // Occasional moves: after a random wait in [min, max] seconds of rest, one is picked by weight.
+  function playOccasional(o) { if (resting()) { st.returnTo = st.pose; playQueue([o.pose], 'return'); } }
+  function pickOccasional() {
+    let r = Math.random() * occasional.reduce((s, o) => s + o.weight, 0);
+    return occasional.find((o) => (r -= o.weight) < 0) ?? occasional.at(-1);
+  }
+  function restTick(dt) {
+    if (!occasional.length || !resting()) return;
+    if (st.occIn == null) { st.occNext = pickOccasional(); st.occIn = (st.occNext.wait[0] + Math.random() * (st.occNext.wait[1] - st.occNext.wait[0])) * 1000; return; }
+    st.occIn -= dt;
+    if (st.occIn <= 0) playOccasional(st.occNext);
+  }
   function playPose(p) { st.x = slotX(); if (poses[p].loop) { st.mode = 'loopRest'; setPose(p); } else playQueue([p], 'rest'); }
 
   function update(dt) {
@@ -102,6 +116,7 @@ ul { margin: 0; padding-left: 18px; }
       return;
     }
     st.t += dt * G.speed;
+    restTick(dt * G.speed);
     const i = Math.floor(st.t * fps / 1000);
     if (pose.loop) { st.frame = pose.frames[i % n]; return; }
     if (i < n) { st.frame = pose.frames[i]; return; }
@@ -156,6 +171,7 @@ ul { margin: 0; padding-left: 18px; }
   if (loco) btn(flow, `Giriş: ${loco.pose} → varış`, enter, true);
   if (M.arrive.length) btn(flow, `Varış: ${M.arrive.map((a) => a.pose).join(' → ')}`, arrive, !loco);
   if (press) btn(flow, `Dokun: ${press.pose}`, tap);
+  for (const o of occasional) btn(flow, `Ara hareket: ${o.pose}`, () => playOccasional(o));
   const posesRow = $('poses');
   const lbl = document.createElement('span'); lbl.className = 'k'; lbl.textContent = 'Pozlar'; posesRow.appendChild(lbl);
   for (const p of Object.keys(poses)) btn(posesRow, `${p} (${poses[p].frames.length})`, () => playPose(p));
@@ -171,6 +187,7 @@ ul { margin: 0; padding-left: 18px; }
     ['Atlas', `${R.atlas.w}×${R.atlas.h} · ${R.atlas.kb} KB`],
     ['Bellek', `${R.atlas.memoryMB} MB`],
     ...(loco ? [['Adım / hız', `${loco.strideLength} pt · ${loco.speed} pt/sn`]] : []),
+    ...(occasional.length ? [['Ara hareketler', occasional.map((o) => `${o.pose} ${o.wait[0]}–${o.wait[1]} sn`).join(', ')]] : []),
     ...Object.entries(R.poses).map(([n, p]) => [n, `${p.kind} · ${p.frames} kare${p.frames > 1 ? ` · ${p.fps} fps` : ''}`, false, true]),
   ];
   // Pose names are identifiers: uppercase them with English rules (no Turkish dotted İ).

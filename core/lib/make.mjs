@@ -1,113 +1,75 @@
 // item.json -> pixel art package (manifest + atlas), preview page and report.
 // Every decision that was made by hand in the wolf test is made here from measurements:
 // loop points, clip ranges, pixel size, palette, anchor and ground placement, canvas size.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { findLoop, groundSpeed, measureClip, reactionRange, transitionRange } from './analyze.mjs';
-import { extract, SOURCE_FPS } from './frames.mjs';
+import { groundSpeed } from './analyze.mjs';
+import { progress, UserError } from './log.mjs';
 import { pack, writeAtlas } from './pack.mjs';
 import { pixelFile, pixelize } from './pixelize.mjs';
+import { byName, checkRange, continuation, effectiveRange, gridFactor, itemPath, poseClip, poseVideo, sampledFrames } from './poses.mjs';
 import { writePreview } from './preview.mjs';
-import { listFrames, measure, progress, readRGBA, round, sha256 } from './util.mjs';
+import { chainOrder, LOOPING, occasionalList, refName } from './schema.mjs';
+import { fileKey, listFrames, measure, readRGBA, round, sha256 } from './util.mjs';
 
-export const KINDS = ['locomotion', 'loop', 'transition', 'reaction', 'still'];
 export const BUDGET_KB = { animated: 500, static: 150 }; // package size budget per item
-
-export function loadItem(file) {
-  const item = JSON.parse(fs.readFileSync(file, 'utf8'));
-  item.__dir = path.dirname(path.resolve(file));
-  return validate(item);
-}
-
-export function validate(item) {
-  const err = (m) => { throw new Error(`item.json: ${m}`); };
-  if (!/^[a-z]+\.[a-z0-9-]+$/.test(item.id ?? '')) err('"id" must look like "pet.shadow-wolf"');
-  if (!item.poses?.length) err('"poses" is empty');
-  const names = new Set();
-  for (const p of item.poses) {
-    if (!/^[a-z][a-z0-9_]*$/.test(p.name ?? '')) err(`pose name "${p.name}" must be snake_case`);
-    if (names.has(p.name)) err(`pose "${p.name}" appears twice`);
-    names.add(p.name);
-    if (!KINDS.includes(p.kind)) err(`pose "${p.name}": kind must be one of ${KINDS.join(', ')}`);
-    if (p.kind === 'still') { if (!p.from && !p.video) err(`pose "${p.name}": a still needs "from" (pose) or "video"`); }
-    else if (!p.video) err(`pose "${p.name}": "video" is missing`);
-    if (p.fps && ![6, 8, 12, 24].includes(p.fps)) err(`pose "${p.name}": fps must be 6, 8, 12 or 24`);
-  }
-  for (const p of item.poses) {
-    for (const ref of [p.from, p.startsFrom].filter((r) => r && r !== 'anchor')) if (!names.has(ref)) err(`pose "${p.name}" refers to unknown pose "${ref}"`);
-  }
-  const b = item.behavior ?? {};
-  for (const ref of [b.enter, b.onPress, ...(b.arrive ?? [])].filter(Boolean)) if (!names.has(ref)) err(`behavior refers to unknown pose "${ref}"`);
-  return item;
-}
-
-const resolve = (item, p) => (path.isAbsolute(p) ? p : path.join(item.__dir, p));
+export const MAX_ATLAS_SIDE = 2048;
 
 export async function make(item, { out } = {}) {
-  const facing = item.facing ?? 'left';
   const ptPerPixel = item.ptPerPixel ?? 1;
   const colors = item.colors ?? 24;
   const cacheRoot = path.join(item.__dir, '.pixel-cache');
-  const outDir = out ?? resolve(item, item.output ?? `build/${item.id}`);
+  const outDir = out ?? itemPath(item, item.output ?? `build/${item.id}`);
   const warnings = [];
 
   // 1. Frames and measurements per video.
-  const clips = {};
-  for (const p of item.poses.filter((p) => p.video)) {
-    const video = resolve(item, p.video);
-    if (!clips[video]) {
-      const ex = await extract(video, cacheRoot);
-      progress('measuring', path.basename(video));
-      clips[video] = { ...ex, ...(await measureClip(ex.key)) };
-    }
-    p.__clip = clips[video];
-  }
+  const missing = item.poses.filter((p) => p.kind !== 'still' && !poseVideo(item, p).exists);
+  if (missing.length) throw new UserError(`no video yet for ${missing.map((p) => `${p.name} (${poseVideo(item, p).rel})`).join(', ')}`);
+  for (const p of item.poses.filter((p) => p.kind !== 'still')) p.__clip = await poseClip(item, p);
 
   // 2. Frame choice per pose (source frame indices at 24 fps).
-  const byName = Object.fromEntries(item.poses.map((p) => [p.name, p]));
   const report = { id: item.id, poses: {}, warnings };
-  for (const p of ordered(item.poses)) {
-    const fps = p.fps ?? 12, step = Math.round(SOURCE_FPS / fps), clip = p.__clip;
-    const r = { kind: p.kind, fps };
+  for (const p of chainOrder(item.poses)) {
+    const r = { kind: p.kind };
     if (p.kind === 'still') {
-      const src = p.from ? byName[p.from] : p;
-      const list = p.from ? src.__frames : null;
-      const idx = p.frame === 'last' ? list.at(-1) : p.frame === 'first' || p.frame == null ? (list ? list[0] : 0) : list ? list[p.frame] : p.frame;
-      p.__frames = [idx];
-      p.__clip = src.__clip;
-      r.sourceFrame = idx;
-    } else if (p.kind === 'locomotion' || p.kind === 'loop') {
-      let start, length;
-      if (p.range) { [start] = p.range; length = p.range[1] - p.range[0]; }
-      else {
-        const cands = findLoop(clip, { step, minLen: p.kind === 'locomotion' ? 16 : 12, maxLen: 48 });
-        if (!cands.length) throw new Error(`pose "${p.name}": video is too short to find a loop`);
-        ({ start, length } = cands[0]);
-        r.loopScore = cands[0].score;
-        if (cands[0].score > 25) warnings.push(`${p.name}: loop does not close cleanly (score ${cands[0].score}); check the jump from the last frame to the first`);
-      }
-      p.__frames = range(start, start + length - 1, step);
-      r.range = [start, start + length];
-      if (p.kind === 'locomotion') {
-        const gs = groundSpeed(clip, start, start + length - 1, facing);
-        p.__strideSrc = gs.speed * length;
-        r.groundSpeedSrcPxPerFrame = gs.speed;
-        if (gs.samples < length) warnings.push(`${p.name}: few ground contacts measured (${gs.samples}); stride length may be off`);
-      }
+      const ref = byName(item, p.startsFrom.pose);
+      const c = continuation(ref, p.startsFrom.frame, ref.__range);
+      p.__clip = ref.__clip;
+      p.__frames = [c.sourceFrame];
+      p.__from = c;
+      r.sourceFrame = c.sourceFrame;
     } else {
-      const rr = p.range ? { start: p.range[0], end: p.range[1] } : p.kind === 'transition' ? transitionRange(clip) : reactionRange(clip);
-      p.__frames = range(rr.start, rr.end, step);
-      r.range = [rr.start, rr.end];
-      if (p.kind === 'reaction' && rr.returnScore > 15) warnings.push(`${p.name}: does not return to its first pose cleanly (score ${rr.returnScore})`);
+      const clip = p.__clip;
+      const { range, explicit, suggestion } = effectiveRange(p, clip);
+      if (!range) throw new UserError(`${p.name}: the video is too short to find a ${p.kind} range; choose one with set-range`);
+      checkRange(p, clip, range);
+      p.__range = range;
+      p.__frames = sampledFrames(p, range);
+      r.fps = p.fps ?? 12;
+      r.range = range;
+      r.rangeChosen = explicit;
+      if (!explicit && suggestion) {
+        if (LOOPING.has(p.kind)) {
+          r.loopScore = suggestion.score;
+          if (suggestion.score > 25) warnings.push(`${p.name}: loop does not close cleanly (score ${suggestion.score}); check the jump from the last frame to the first`);
+        }
+        if (p.kind === 'reaction' && suggestion.returnScore > 15) warnings.push(`${p.name}: does not return to its first pose cleanly (score ${suggestion.returnScore})`);
+      }
+      if (p.kind === 'locomotion') {
+        const gs = groundSpeed(clip, range[0], range[1] - 1, item.facing ?? 'left');
+        p.__strideSrc = gs.speed * (range[1] - range[0]);
+        r.groundSpeedSrcPxPerFrame = gs.speed;
+        if (gs.samples < range[1] - range[0]) warnings.push(`${p.name}: few ground contacts measured (${gs.samples}); stride length may be off`);
+      }
+      if (refName(p)) p.__from = continuation(byName(item, p.startsFrom.pose), p.startsFrom.frame, byName(item, p.startsFrom.pose).__range);
     }
     r.frames = p.__frames.length;
     report.poses[p.name] = r;
   }
 
   // 3. One grid and one palette for every frame of every pose.
-  const refPose = byName[item.referencePose] ?? item.poses.find((p) => p.video);
-  const refFrame = refPose.__clip.frames[refPose.__frames[0]].m;
-  const factor = refFrame.width / (item.pixelWidth ?? 170);
+  const factor = await gridFactor(item);
   const pxDir = path.join(cacheRoot, 'pixel', item.id);
   fs.rmSync(pxDir, { recursive: true, force: true });
   fs.mkdirSync(pxDir, { recursive: true });
@@ -121,7 +83,7 @@ export async function make(item, { out } = {}) {
   }
 
   // 4. Placement: anchor x and ground line per frame, in art px.
-  for (const p of ordered(item.poses)) placePose(p, byName, warnings);
+  for (const p of chainOrder(item.poses)) placePose(p, item, warnings);
 
   // 5. Atlas.
   progress('packing atlas');
@@ -151,44 +113,25 @@ export async function make(item, { out } = {}) {
     atlas: { ...packed.atlasSize, kb: round(packed.atlas.length / 1024), memoryMB: round(packed.atlasSize.w * packed.atlasSize.h * 4 / 1048576) },
     packageKB: round(pkgBytes / 1024),
     budgetKB: budget,
+    maxAtlasSide: MAX_ATLAS_SIDE,
+    inputs: packageInputs(item),
+    madeAt: new Date().toISOString(),
     locomotion: manifest.locomotion ?? null,
   });
   if (report.packageKB > budget) warnings.push(`package is ${report.packageKB} KB, over the ${budget} KB budget; try fps 8 for slow poses or shorter ranges`);
-  if (packed.atlasSize.w > 2048 || packed.atlasSize.h > 2048) warnings.push(`atlas is ${packed.atlasSize.w}×${packed.atlasSize.h}, over 2048 px per side`);
+  if (packed.atlasSize.w > MAX_ATLAS_SIDE || packed.atlasSize.h > MAX_ATLAS_SIDE) warnings.push(`atlas is ${packed.atlasSize.w}×${packed.atlasSize.h}, over ${MAX_ATLAS_SIDE} px per side`);
   for (const p of item.poses) report.poses[p.name].groundJitter = p.__groundJitter ?? 0;
   report.preview = writePreview(outDir, { manifest, atlasJson: atlas.json, atlasFile: path.join(outDir, atlas.image), report });
   fs.writeFileSync(path.join(outDir, 'report.json'), JSON.stringify(report, null, 1));
   return report;
 }
 
-const range = (a, b, step) => { const o = []; for (let i = a; i <= b; i += step) o.push(i); return o; };
-
-// Poses that depend on another pose (startsFrom / from) come after it.
-function ordered(poses) {
-  const done = new Set(), out = [];
-  const visit = (p) => {
-    if (done.has(p.name)) return;
-    done.add(p.name);
-    for (const ref of [p.from, p.startsFrom]) if (ref && ref !== 'anchor') visit(poses.find((q) => q.name === ref));
-    out.push(p);
-  };
-  poses.forEach(visit);
-  return out;
-}
-
 // Tracking-camera poses (locomotion) stand on their own lowest pixel in every frame.
 // Fixed-camera poses keep the camera's ground; when the lowest pixel ends lower or higher
 // (e.g. lying down brings the front paws forward), the ground eases to it over the clip.
-// A pose that startsFrom another continues exactly where that pose's last frame is.
-function placePose(p, byName, warnings) {
+// A pose that startsFrom another continues exactly where that pose's chosen frame is.
+function placePose(p, item, warnings) {
   const m = p.__m;
-  if (p.kind === 'still') {
-    const src = p.from ? byName[p.from] : null;
-    const at = src ? (p.frame === 'last' ? src.__m.length - 1 : p.frame === 'first' || p.frame == null ? 0 : p.frame) : 0;
-    p.__anchorX = src ? src.__anchorX : m[0].cx;
-    p.__ground = [src ? src.__ground[at] : m[0].maxY];
-    return;
-  }
   if (p.kind === 'locomotion') {
     p.__anchorX = m.reduce((s, f) => s + f.cx, 0) / m.length;
     p.__ground = m.map((f) => f.maxY);
@@ -197,14 +140,14 @@ function placePose(p, byName, warnings) {
     if (p.__groundJitter > 4) warnings.push(`${p.name}: ground line moves ${p.__groundJitter} px between frames`);
     return;
   }
-  const prev = p.startsFrom && p.startsFrom !== 'anchor' ? byName[p.startsFrom] : null;
+  const prev = p.__from ? byName(item, p.__from.pose) : null;
   let anchorX, g0;
   if (prev) {
-    const last = prev.__m.at(-1);
-    anchorX = prev.__anchorX + (m[0].cx - last.cx);
-    g0 = prev.__ground.at(-1) + (m[0].maxY - last.maxY);
-    const jump = Math.hypot(m[0].cx - last.cx, m[0].maxY - last.maxY);
-    if (jump > 6) warnings.push(`${p.name}: first frame is ${round(jump)} px away from the last frame of ${prev.name}; the clip may not start from that frame`);
+    const at = prev.__m[p.__from.index];
+    anchorX = prev.__anchorX + (m[0].cx - at.cx);
+    g0 = prev.__ground[p.__from.index] + (m[0].maxY - at.maxY);
+    const jump = Math.hypot(m[0].cx - at.cx, m[0].maxY - at.maxY);
+    if (jump > 6) warnings.push(`${p.name}: first frame is ${round(jump)} px away from frame ${p.__from.sourceFrame} of ${prev.name}; the video may not start from that frame`);
   } else {
     anchorX = m[0].cx;
     g0 = m[0].maxY;
@@ -223,7 +166,7 @@ function buildManifest(item, { size, anchorY, atlas, ptPerPixel, factor }) {
   const poses = Object.fromEntries(item.poses.map((p) => {
     const pose = { frames: p.__m.map((_, i) => `${p.name}_${i + 1}`) };
     if (pose.frames.length > 1) pose.fps = p.fps ?? 12;
-    if (p.kind === 'locomotion' || p.kind === 'loop') pose.loop = true;
+    if (LOOPING.has(p.kind)) pose.loop = true;
     return [p.name, pose];
   }));
   const manifest = {
@@ -248,7 +191,7 @@ function buildManifest(item, { size, anchorY, atlas, ptPerPixel, factor }) {
   const arrive = b.arrive ?? [];
   manifest.arrive = arrive.map((pose) => ({ pose }));
   manifest.rest = b.restTracks ?? [];
-  manifest.occasional = [];
+  manifest.occasional = occasionalList(b);
   const restPose = arrive.at(-1);
   manifest.onPress = [
     ...(b.onPress ? [{ pose: b.onPress, ...(restPose ? { returnTo: restPose } : {}) }] : []),
@@ -256,4 +199,19 @@ function buildManifest(item, { size, anchorY, atlas, ptPerPixel, factor }) {
   ];
   manifest.store = null;
   return manifest;
+}
+
+// What the package is made from: the fields that change pixels or the manifest and every
+// video's file key. Prompt texts and start frame settings are left out, so editing them does
+// not mark a built package as outdated.
+export function packageInputs(item) {
+  const PROMPT_ONLY = ['template', 'anchor', 'subject', 'persistentDetails', 'style'];
+  const saved = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith('__')));
+  const fields = Object.fromEntries(Object.entries(saved(item)).filter(([k]) => !PROMPT_ONLY.includes(k) && k !== 'poses'));
+  fields.poses = item.poses.map((p) => {
+    const { motion, start, ...rest } = saved(p);
+    const v = poseVideo(item, p);
+    return { ...rest, video: v?.rel, videoKey: v?.exists ? fileKey(v.abs) : null };
+  });
+  return crypto.createHash('sha1').update(JSON.stringify(fields)).digest('hex').slice(0, 16);
 }

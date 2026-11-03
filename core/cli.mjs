@@ -1,75 +1,179 @@
 #!/usr/bin/env node
-// pixel-pipeline: side-view videos of a character -> pixel art package (atlas + manifest).
+// pixel-pipeline: side-view videos of a character, pet or object -> pixel art package (atlas + manifest).
+// Every command calls the same core functions as the web UI and logs to <item>/logs/.
 //
-//   node cli.mjs prep-start <image> <out.png> [--below 0.2]   start frame for a video model
-//   node cli.mjs inspect <video> [--cache dir] [--json]       frames, contact sheet, suggested ranges
-//   node cli.mjs make <item.json> [--out dir] [--json]        package + preview.html + report.json
+//   init <dir> --template <name> [--anchor <img>] [--id <type.name>]   new item folder from a plan template
+//   templates                                                        list plan templates
+//   status <item.json>                                               stage of every pose and the next step
+//   start-frame <item.json> <pose>                                   start-frames/<pose>.png for the video model
+//   prompt <item.json> <pose>                                        video prompt for the pose
+//   inspect <item.json> <pose> | inspect <video>                     frames, contact sheet, suggested range
+//   set-range <item.json> <pose> <a> <b>                             choose the pose's range (24 fps source frames)
+//   make <item.json> [--out dir]                                     package + preview.html + report.json
 //
 // With --json the result is printed to stdout as JSON and progress goes to stderr as JSON lines.
 import path from 'node:path';
-import { findLoop, measureClip, reactionRange, transitionRange } from './lib/analyze.mjs';
-import { extract } from './lib/frames.mjs';
-import { loadItem, make } from './lib/make.mjs';
-import { prepStart } from './lib/prep.mjs';
-import { setJsonProgress } from './lib/util.mjs';
+import { inspectPose, inspectVideo, setRange } from './lib/inspect.mjs';
+import { logError, setJsonProgress, UserError, withLog } from './lib/log.mjs';
+import { make } from './lib/make.mjs';
+import { createItem, listTemplates } from './lib/plan.mjs';
+import { videoPrompt } from './lib/prompt.mjs';
+import { loadItem } from './lib/schema.mjs';
+import { makeStartFrame } from './lib/startframe.mjs';
+import { describeNext, itemStatus } from './lib/status.mjs';
 
-const args = process.argv.slice(2);
-const flag = (name, def) => { const i = args.indexOf(`--${name}`); return i < 0 ? def : args[i + 1]; };
-const json = args.includes('--json');
-setJsonProgress(json);
-const [cmd, a1, a2] = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && !['--json'].includes(args[i - 1])));
+const USAGE = `usage:
+  cli.mjs init <dir> --template <name> [--anchor <img>] [--id <type.name>]
+  cli.mjs templates
+  cli.mjs status <item.json>
+  cli.mjs start-frame <item.json> <pose>
+  cli.mjs prompt <item.json> <pose>
+  cli.mjs inspect <item.json> <pose>   |   cli.mjs inspect <video> [--cache dir]
+  cli.mjs set-range <item.json> <pose> <a> <b>
+  cli.mjs make <item.json> [--out dir]
+options: --json (result on stdout as JSON, progress on stderr as JSON lines)`;
+
+function usage(msg) {
+  if (msg) console.error(`error: ${msg}`);
+  console.error(USAGE);
+  process.exit(2);
+}
+
+const VALUE_FLAGS = ['template', 'anchor', 'id', 'out', 'cache'];
+const args = process.argv.slice(2), flags = {}, pos = [];
+for (let i = 0; i < args.length; i++) {
+  const a = args[i];
+  if (a === '--json') flags.json = true;
+  else if (a.startsWith('--') && VALUE_FLAGS.includes(a.slice(2))) flags[a.slice(2)] = args[++i];
+  else if (a.startsWith('--')) usage(`unknown option ${a}`);
+  else pos.push(a);
+}
+setJsonProgress(!!flags.json);
+const [cmd, ...rest] = pos;
 
 function print(result, human) {
-  if (json) process.stdout.write(JSON.stringify(result) + '\n');
+  if (flags.json) process.stdout.write(JSON.stringify(result) + '\n');
   else console.log(human(result));
 }
 
-try {
-  if (cmd === 'prep-start' && a1 && a2) {
-    const r = await prepStart(path.resolve(a1), path.resolve(a2), { below: +flag('below', 0.2) });
-    print(r, (r) => `start frame: ${r.output}\nbackground ${r.background}, figure ${r.figure.w}×${r.figure.h} at (${r.figure.x}, ${r.figure.y})`);
-  } else if (cmd === 'inspect' && a1) {
-    const video = path.resolve(a1);
-    const ex = await extract(video, path.resolve(flag('cache', path.join(path.dirname(video), '.pixel-cache'))));
-    const clip = await measureClip(ex.key);
-    const first = clip.frames[0].m;
-    const r = {
-      video, info: ex.info, contactSheet: path.join(ex.src, 'sheet.png'), frames: clip.frames.length,
-      figure: first && { width: first.width, height: first.height },
-      motion: clip.motion,
-      suggestions: {
-        loop: findLoop(clip, { step: 2, minLen: 12, maxLen: 48 })[0] ?? null,
-        transition: transitionRange(clip),
-        reaction: reactionRange(clip),
-      },
-    };
+const need = (n) => { if (rest.length < n) usage(`${cmd} needs ${n} argument${n > 1 ? 's' : ''}`); };
+const isItemFile = (f) => path.basename(f) === 'item.json' || f.endsWith('.json');
+
+// Commands on an item log into that item's folder, failures included.
+function inItem(dir, fn) {
+  return withLog({ itemDir: dir }, async () => {
+    try { return await fn(); }
+    catch (e) { logError(e); throw e; }
+  });
+}
+const onItem = (file, fn) => inItem(path.dirname(path.resolve(file)), () => fn(loadItem(file)));
+
+const COMMANDS = {
+  async init() {
+    need(1);
+    if (!flags.template) usage('init needs --template <name>');
+    const dir = path.resolve(rest[0]);
+    const fields = flags.id ? { id: flags.id, type: flags.id.split('.')[0] } : {};
+    const file = await inItem(dir, () => createItem(dir, { template: flags.template, anchor: flags.anchor && path.resolve(flags.anchor), fields }));
+    const item = loadItem(file);
+    print({ item: file, id: item.id, status: itemStatus(item) }, (r) => `created ${r.item} (${r.id})\nnext: ${describeNext(item, r.status.next)}`);
+  },
+
+  async templates() {
+    const list = listTemplates().map((t) => ({ name: t.name, title: t.title, type: t.type, poses: t.poses.map((p) => `${p.name}:${p.kind}`) }));
+    print(list, (l) => l.map((t) => `${t.name.padEnd(14)} ${t.type.padEnd(10)} ${t.poses.join(' ')}`).join('\n'));
+  },
+
+  async status() {
+    need(1);
+    await onItem(rest[0], (item) => {
+      const s = itemStatus(item);
+      print(s, (s) => [
+        `${s.id}: ${s.posesDone}/${s.posesTotal} poses ready, package ${s.package.state}${s.package.packageKB ? ` (${s.package.packageKB} KB)` : ''}`,
+        ...s.poses.map((p) => `  ${p.name.padEnd(12)} ${p.kind.padEnd(10)} ${p.stage}${p.range ? `  range ${p.range[0]}–${p.range[1]}` : p.suggested ? `  suggested ${p.suggested[0]}–${p.suggested[1]}` : ''}${p.note ? `  (${p.note})` : ''}`),
+        `next: ${describeNext(item, s.next)}`,
+      ].join('\n'));
+    });
+  },
+
+  async 'start-frame'() {
+    need(2);
+    await onItem(rest[0], async (item) => {
+      const r = await makeStartFrame(item, rest[1]);
+      print(r, (r) => `start frame: ${r.image}\nfrom ${r.source === 'anchor' ? r.anchor : `${r.pose} frame ${r.sourceFrame}`}, background ${r.background}, figure ${r.figure.w}×${r.figure.h} at (${r.figure.x}, ${r.figure.y})`);
+    });
+  },
+
+  async prompt() {
+    need(2);
+    await onItem(rest[0], async (item) => {
+      const r = await videoPrompt(item, rest[1]);
+      if (!r.text) throw new UserError(`${rest[1]}: the prompt needs ${r.missing.join(', ')} first`);
+      print(r, (r) => r.text);
+    });
+  },
+
+  async inspect() {
+    need(1);
+    if (rest.length >= 2 && isItemFile(rest[0])) {
+      await onItem(rest[0], async (item) => {
+        const r = await inspectPose(item, rest[1]);
+        print(r, (r) => [
+          `${r.pose} (${r.kind}, ${r.fps} fps): ${r.video}, ${r.frames} frames at 24 fps, ${r.info.width}×${r.info.height}`,
+          r.suggestion ? `suggested range ${r.suggestion.start}–${r.suggestion.end}${r.suggestion.score != null ? ` (loop score ${r.suggestion.score})` : ''}` : 'no range could be suggested',
+          r.range ? `range in use ${r.range[0]}–${r.range[1]} (${r.rangeChosen ? 'chosen' : 'suggested'}), ${r.played} frames played` : null,
+          r.locomotion ? `stride ${r.locomotion.strideLength} pt, speed ${r.locomotion.speed} pt/s` : null,
+          `contact sheet: ${r.contactSheet} (${r.sheet.cols} per row)`,
+        ].filter(Boolean).join('\n'));
+      });
+      return;
+    }
+    const video = path.resolve(rest[0]);
+    const r = await inspectVideo(video, flags.cache && path.resolve(flags.cache));
+    const s = r.suggestions;
     print(r, (r) => [
       `${path.basename(video)}: ${r.frames} frames at 24 fps, ${r.info.width}×${r.info.height}`,
       `figure ${r.figure?.width}×${r.figure?.height} px (first frame)`,
-      `loop:       start ${r.suggestions.loop?.start}, length ${r.suggestions.loop?.length} (score ${r.suggestions.loop?.score})`,
-      `transition: frames ${r.suggestions.transition.start}–${r.suggestions.transition.end}`,
-      `reaction:   frames ${r.suggestions.reaction.start}–${r.suggestions.reaction.end} (return score ${r.suggestions.reaction.returnScore})`,
+      `loop:       ${s.loop ? `${s.loop.start}–${s.loop.end} (score ${s.loop.score})` : '—'}`,
+      `locomotion: ${s.locomotion ? `${s.locomotion.start}–${s.locomotion.end} (score ${s.locomotion.score})` : '—'}`,
+      `transition: ${s.transition.start}–${s.transition.end}`,
+      `reaction:   ${s.reaction.start}–${s.reaction.end} (return score ${s.reaction.returnScore})`,
       `contact sheet: ${r.contactSheet}`,
     ].join('\n'));
-  } else if (cmd === 'make' && a1) {
-    const item = loadItem(path.resolve(a1));
-    const out = flag('out');
-    const r = await make(item, { out: out && path.resolve(out) });
-    print(r, (r) => [
-      `package: ${r.output}`,
-      `size ${r.size.width}×${r.size.height} pt, anchor y ${r.anchor.y}, ${r.sourcePxPerPixel} source px per pixel, ${r.palette.length} colours`,
-      ...Object.entries(r.poses).map(([n, p]) => `  ${n.padEnd(12)} ${p.kind.padEnd(10)} ${String(p.frames).padStart(3)} frames @ ${p.fps} fps${p.range ? `  (source ${p.range[0]}–${p.range[1]})` : ''}`),
-      r.locomotion ? `stride ${r.locomotion.strideLength} pt, speed ${r.locomotion.speed} pt/s` : null,
-      `atlas ${r.atlas.w}×${r.atlas.h} (${r.atlas.kb} KB, ${r.atlas.memoryMB} MB in memory), package ${r.packageKB} KB of ${r.budgetKB} KB`,
-      ...r.warnings.map((w) => `! ${w}`),
-      `preview: ${r.preview}`,
-    ].filter(Boolean).join('\n'));
-  } else {
-    console.error('usage:\n  cli.mjs prep-start <image> <out.png> [--below 0.2]\n  cli.mjs inspect <video> [--json]\n  cli.mjs make <item.json> [--out dir] [--json]');
-    process.exit(2);
-  }
+  },
+
+  async 'set-range'() {
+    need(4);
+    await onItem(rest[0], async (item) => {
+      const r = await setRange(item, rest[1], rest[2], rest[3]);
+      print(r, (r) => [`${r.pose}: range ${r.range[0]}–${r.range[1]}, ${r.played} frames at ${r.fps} fps`,
+        r.locomotion ? `stride ${r.locomotion.strideLength} pt, speed ${r.locomotion.speed} pt/s` : null].filter(Boolean).join('\n'));
+    });
+  },
+
+  async make() {
+    need(1);
+    await onItem(rest[0], async (item) => {
+      const r = await make(item, { out: flags.out && path.resolve(flags.out) });
+      print(r, (r) => [
+        `package: ${r.output}`,
+        `size ${r.size.width}×${r.size.height} pt, anchor y ${r.anchor.y}, ${r.sourcePxPerPixel} source px per pixel, ${r.palette.length} colours`,
+        ...Object.entries(r.poses).map(([n, p]) => `  ${n.padEnd(12)} ${p.kind.padEnd(10)} ${String(p.frames).padStart(3)} frames${p.fps ? ` @ ${p.fps} fps` : ''}${p.range ? `  (source ${p.range[0]}–${p.range[1]}${p.rangeChosen ? '' : ', suggested'})` : ''}`),
+        r.locomotion ? `stride ${r.locomotion.strideLength} pt, speed ${r.locomotion.speed} pt/s` : null,
+        `atlas ${r.atlas.w}×${r.atlas.h} (${r.atlas.kb} KB, ${r.atlas.memoryMB} MB in memory), package ${r.packageKB} KB of ${r.budgetKB} KB`,
+        ...r.warnings.map((w) => `! ${w}`),
+        `preview: ${r.preview}`,
+      ].filter(Boolean).join('\n'));
+    });
+  },
+};
+
+if (!COMMANDS[cmd]) usage(cmd ? `unknown command "${cmd}"` : null);
+try {
+  await COMMANDS[cmd]();
 } catch (e) {
-  if (json) process.stdout.write(JSON.stringify({ error: e.message }) + '\n');
-  else console.error(`error: ${e.message}`);
+  const text = e instanceof UserError ? e.message : (e.stack ?? String(e));
+  if (flags.json) process.stdout.write(JSON.stringify({ error: e.message }) + '\n');
+  else console.error(`error: ${text}`);
   process.exit(1);
 }

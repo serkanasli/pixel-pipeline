@@ -1,19 +1,20 @@
 // Start frame for a video model: the anchor image on a 16:9 canvas of one flat background
 // colour, with room around the figure (tails and arms swing outside the anchor's outline).
 import sharp from 'sharp';
+import { UserError } from './log.mjs';
 import { measure } from './util.mjs';
 
 const TOLERANCE = 14; // background pixels within this channel distance become exactly the background colour
 
-export async function prepStart(input, output, { width = 1600, height = 900, below = 0.2, maxFigure = 0.66 } = {}) {
-  const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const w = info.width, h = info.height, n = w * h;
+// Flood fill from the border: background pixels become exactly the background colour (and
+// transparent in `fig`). Returns the median border colour and the figure's bounding box.
+export function flattenBackground(data, w, h) {
+  const n = w * h;
   const border = [[], [], []];
   for (let x = 0; x < w; x++) for (const y of [0, h - 1]) for (let k = 0; k < 3; k++) border[k].push(data[(y * w + x) * 4 + k]);
   for (let y = 0; y < h; y++) for (const x of [0, w - 1]) for (let k = 0; k < 3; k++) border[k].push(data[(y * w + x) * 4 + k]);
   const bg = border.map((a) => a.sort((p, q) => p - q)[a.length >> 1]);
 
-  // Flood fill from the border: background becomes exactly bg and transparent in the mask.
   const near = (i) => Math.max(...[0, 1, 2].map((k) => Math.abs(data[i * 4 + k] - bg[k]))) <= TOLERANCE;
   const seen = new Uint8Array(n), stack = [];
   for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);
@@ -26,10 +27,21 @@ export async function prepStart(input, output, { width = 1600, height = 900, bel
     if (x > 0) stack.push(i - 1); if (x < w - 1) stack.push(i + 1);
     if (i >= w) stack.push(i - w); if (i < n - w) stack.push(i + w);
   }
-  const fig = Buffer.from(data);
-  for (let i = 0; i < n; i++) if (seen[i]) { fig[i * 4] = bg[0]; fig[i * 4 + 1] = bg[1]; fig[i * 4 + 2] = bg[2]; fig[i * 4 + 3] = 0; }
-  const m = measure(fig, w, h, 0);
-  if (!m) throw new Error('no figure found on the background');
+  const fig = Buffer.from(data), flat = Buffer.from(data);
+  for (let i = 0; i < n; i++) if (seen[i]) {
+    for (let k = 0; k < 3; k++) { fig[i * 4 + k] = bg[k]; flat[i * 4 + k] = bg[k]; }
+    fig[i * 4 + 3] = 0; flat[i * 4 + 3] = 255;
+  }
+  return { bg, fig, flat, figure: measure(fig, w, h, 0) };
+}
+
+export const hex = (rgb) => '#' + rgb.map((v) => v.toString(16).padStart(2, '0')).join('');
+
+export async function prepStart(input, output, { width = 1600, height = 900, below = 0.2, maxFigure = 0.66 } = {}) {
+  const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const w = info.width, h = info.height;
+  const { bg, fig, figure: m } = flattenBackground(data, w, h);
+  if (!m) throw new UserError('no figure found on the background of the anchor image');
 
   // Fit the figure (never upscale more than needed), bottom at (1 - below) of the canvas.
   const scale = Math.min(1, (maxFigure * height) / m.height, (0.8 * width) / m.width);
@@ -42,5 +54,5 @@ export async function prepStart(input, output, { width = 1600, height = 900, bel
   await sharp({ create: { width, height, channels: 3, background: { r: bg[0], g: bg[1], b: bg[2] } } })
     .composite([{ input: crop.data, left, top: Math.max(0, top) }])
     .png().toFile(output);
-  return { output, background: '#' + bg.map((v) => v.toString(16).padStart(2, '0')).join(''), figure: { x: left, y: Math.max(0, top), w: crop.info.width, h: crop.info.height }, scale: +scale.toFixed(3) };
+  return { output, background: hex(bg), figure: { x: left, y: Math.max(0, top), w: crop.info.width, h: crop.info.height }, scale: +scale.toFixed(3) };
 }

@@ -1,0 +1,46 @@
+{
+  "title": { "en": "Character", "tr": "Karakter" },
+  "description": {
+    "en": "Greets when the app opens, then idles and blinks now and then; reacts when tapped.",
+    "tr": "Uygulama açılınca selam verir, sonra yerinde durur ve arada göz kırpar; dokununca tepki verir."
+  },
+  "type": "character",
+  "item": {
+    "facing": "left",
+    "style": "Pixel art, crisp square pixels, no anti-aliasing, no blur, no gradients, limited palette, 1-pixel dark outline, flat shadow tones.",
+    "pixelWidth": 96,
+    "ptPerPixel": 1,
+    "colors": 24
+  },
+  "poses": [
+    {
+      "name": "idle",
+      "kind": "loop",
+      "fps": 12,
+      "startsFrom": "anchor",
+      "motion": "It stands relaxed and breathes slowly; the chest and shoulders rise and fall a little, nothing else moves, and it ends in exactly the starting pose."
+    },
+    {
+      "name": "blink",
+      "kind": "reaction",
+      "fps": 12,
+      "startsFrom": { "pose": "idle", "frame": "first" },
+      "motion": "It blinks once, calmly, and then holds exactly the starting pose."
+    },
+    {
+      "name": "open_app",
+      "kind": "transition",
+      "fps": 12,
+      "startsFrom": "anchor",
+      "motion": "It raises one hand and waves hello once, smiles, then lowers the hand and settles into a relaxed standing pose."
+    },
+    {
+      "name": "on_press",
+      "kind": "reaction",
+      "fps": 12,
+      "startsFrom": { "pose": "idle", "frame": "first" },
+      "motion": "It does a small happy hop on the spot with a quick smile, lands softly and returns to exactly the starting pose."
+    }
+  ],
+  "behavior": { "arrive": ["open_app", "idle"], "occasional": ["blink"], "onPress": "on_press" }
+}

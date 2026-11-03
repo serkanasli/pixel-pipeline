@@ -1,7 +1,9 @@
 // Measurements on keyed frames and the automatic choices made from them:
 // loop points, walking speed, and the useful range of one-shot clips.
+import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
+import { progress } from './log.mjs';
 import { frameDiff, listFrames, measure, round } from './util.mjs';
 
 const THUMB = 4; // downscale factor for frame comparisons
@@ -92,4 +94,46 @@ export function reactionRange(clip) {
   let end = n - 1;
   for (let i = peak + 1; i < n; i++) if (toFirst[i] < toFirst[end]) end = i;
   return { start: 0, end, returnScore: round(toFirst[end], 2), peak };
+}
+
+// Suggested range per pose kind and fps, in the same shape as a pose's "range": for looping
+// kinds the end is the frame that matches the start (not played), otherwise the last frame.
+export function suggest(clip, kind, step) {
+  if (kind === 'locomotion' || kind === 'loop') {
+    const cands = findLoop(clip, { step, minLen: kind === 'locomotion' ? 16 : 12, maxLen: 48 });
+    if (!cands.length) return null;
+    return { start: cands[0].start, end: cands[0].start + cands[0].length, score: cands[0].score, alternatives: cands.slice(1).map((c) => [c.start, c.start + c.length, c.score]) };
+  }
+  if (kind === 'transition') return transitionRange(clip);
+  if (kind === 'reaction') return reactionRange(clip);
+  return null;
+}
+
+const ANALYSIS_VERSION = 1;
+const STEPS = [1, 2, 3, 4];
+
+// Per-frame measurements and every suggestion of one extracted video, cached next to its frames
+// (analysis.json) so status, the range picker and make do not re-read 100+ frames each time.
+// Comparison thumbnails are not cached; they are only needed to compute suggestions.
+export async function analyzeClip(ex) {
+  const file = path.join(ex.dir, 'analysis.json');
+  if (fs.existsSync(file)) {
+    const a = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (a.version === ANALYSIS_VERSION) return a;
+  }
+  progress('measuring', path.basename(ex.dir).replace(/-[0-9a-f]{10}$/, ''));
+  const clip = await measureClip(ex.key);
+  const suggestions = {};
+  for (const kind of ['locomotion', 'loop', 'transition', 'reaction']) {
+    suggestions[kind] = {};
+    for (const step of STEPS) suggestions[kind][step] = suggest(clip, kind, step);
+  }
+  const a = {
+    version: ANALYSIS_VERSION,
+    frames: clip.frames.map(({ w, h, m, contacts }) => ({ w, h, m, contacts })),
+    motion: clip.motion,
+    suggestions,
+  };
+  fs.writeFileSync(file, JSON.stringify(a));
+  return a;
 }

@@ -1,16 +1,8 @@
-// Shared helpers: progress reporting, frame file names, image measurement.
+// Shared helpers: frame file names, file keys, image measurement.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-
-// Progress goes to stderr (one JSON object per line when --json is set) so stdout stays
-// free for the command result.
-let jsonProgress = false;
-export function setJsonProgress(on) { jsonProgress = on; }
-export function progress(step, detail = '') {
-  process.stderr.write(jsonProgress ? JSON.stringify({ progress: step, detail }) + '\n' : `• ${step}${detail ? ` — ${detail}` : ''}\n`);
-}
 
 export const frameName = (i) => `f${String(i).padStart(3, '0')}.png`;
 // Numeric order: clips longer than 1000 frames get f1000.png, which sorts before f101.png as text.

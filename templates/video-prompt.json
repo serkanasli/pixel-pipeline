@@ -1,0 +1,21 @@
+{
+  "about": "Prompt for the video model, filled per pose from item.json. Phrases that trip video model safety filters are avoided on purpose (see README).",
+  "lines": [
+    "{{style}}",
+    "{{subject}}, seen exactly from the side in profile, facing {{facing}} the whole time.",
+    "The video starts from the provided start frame and keeps the same size, position and colours.",
+    "{{motion}}",
+    "{{camera}}",
+    "{{details}}",
+    "{{background}}"
+  ],
+  "facing": { "left": "left", "right": "right" },
+  "camera": {
+    "locomotion": "Side tracking shot: the camera travels alongside at exactly the same speed, so the figure stays in the centre of the frame and moves in place with its full motion.",
+    "loop": "Static camera, locked off: no pan, no zoom, no camera movement.",
+    "transition": "Static camera, locked off: no pan, no zoom, no camera movement.",
+    "reaction": "Static camera, locked off: no pan, no zoom, no camera movement."
+  },
+  "details": "These details stay in every frame until the very end, never fading or disappearing: {{list}}.",
+  "background": "Plain flat background of one solid colour ({{colour}}) that never changes, with no floor line, no cast shadow on the ground and nothing else in the scene."
+}

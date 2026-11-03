@@ -10,4 +10,6 @@ app/.swiftpm/
 # Example media stays local; see examples/shadow-wolf/README.md
 examples/*/videos/
 examples/*/start-frames/
+examples/*/anchor.*
+examples/*/logs/
 CLAUDE.local.md

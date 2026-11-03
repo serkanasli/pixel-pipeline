@@ -5,7 +5,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import { keyDir } from './key.mjs';
-import { fileKey, listFrames, progress } from './util.mjs';
+import { progress } from './log.mjs';
+import { fileKey, listFrames } from './util.mjs';
 
 export const SOURCE_FPS = 24; // every clip is sampled at 24 fps; poses take every 2nd (12 fps) or 3rd (8 fps) frame
 const SHEET_COLS = 12;
