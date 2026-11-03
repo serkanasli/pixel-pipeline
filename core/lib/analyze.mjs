@@ -68,6 +68,7 @@ export function groundSpeed(clip, from, to, facing = 'left') {
 
 // One-shot clip that settles into a new pose (curl up, sit down, intro): from just before the
 // motion starts until it stops changing. Ambient detail (smoke, hair) keeps a small noise floor.
+// null when no such motion is found (e.g. a walk cycle already looks settled at frame 0).
 export function transitionRange(clip) {
   const n = clip.frames.length, last = n - 1;
   const toLast = clip.frames.map((_, i) => diffAt(clip, i, last));
@@ -81,6 +82,7 @@ export function transitionRange(clip) {
   const startNoise = Math.max(toFirst[1] ?? 0, toFirst[2] ?? 0) * 2 + 2;
   let start = 0;
   for (let i = 1; i < n; i++) if (toFirst[i] > startNoise) { start = i - 1; break; }
+  if (end <= start) return null;
   return { start, end, settleNoise: round(settleNoise, 2) };
 }
 
@@ -109,7 +111,7 @@ export function suggest(clip, kind, step) {
   return null;
 }
 
-const ANALYSIS_VERSION = 1;
+const ANALYSIS_VERSION = 2; // 2: transition suggestion is null when no motion is found
 const STEPS = [1, 2, 3, 4];
 
 // Per-frame measurements and every suggestion of one extracted video, cached next to its frames

@@ -120,7 +120,7 @@ const COMMANDS = {
         const r = await inspectPose(item, rest[1]);
         print(r, (r) => [
           `${r.pose} (${r.kind}, ${r.fps} fps): ${r.video}, ${r.frames} frames at 24 fps, ${r.info.width}×${r.info.height}`,
-          r.suggestion ? `suggested range ${r.suggestion.start}–${r.suggestion.end}${r.suggestion.score != null ? ` (loop score ${r.suggestion.score})` : ''}` : 'no range could be suggested',
+          r.suggestion ? `suggested range ${r.suggestion.start}–${r.suggestion.end}${r.suggestion.score != null ? ` (loop score ${r.suggestion.score})` : ''}` : 'no suggestion: choose the range with set-range',
           r.range ? `range in use ${r.range[0]}–${r.range[1]} (${r.rangeChosen ? 'chosen' : 'suggested'}), ${r.played} frames played` : null,
           r.locomotion ? `stride ${r.locomotion.strideLength} pt, speed ${r.locomotion.speed} pt/s` : null,
           `contact sheet: ${r.contactSheet} (${r.sheet.cols} per row)`,
@@ -134,10 +134,10 @@ const COMMANDS = {
     print(r, (r) => [
       `${path.basename(video)}: ${r.frames} frames at 24 fps, ${r.info.width}×${r.info.height}`,
       `figure ${r.figure?.width}×${r.figure?.height} px (first frame)`,
-      `loop:       ${s.loop ? `${s.loop.start}–${s.loop.end} (score ${s.loop.score})` : '—'}`,
-      `locomotion: ${s.locomotion ? `${s.locomotion.start}–${s.locomotion.end} (score ${s.locomotion.score})` : '—'}`,
-      `transition: ${s.transition.start}–${s.transition.end}`,
-      `reaction:   ${s.reaction.start}–${s.reaction.end} (return score ${s.reaction.returnScore})`,
+      `loop:       ${s.loop ? `${s.loop.start}–${s.loop.end} (score ${s.loop.score})` : 'no suggestion'}`,
+      `locomotion: ${s.locomotion ? `${s.locomotion.start}–${s.locomotion.end} (score ${s.locomotion.score})` : 'no suggestion'}`,
+      `transition: ${s.transition ? `${s.transition.start}–${s.transition.end}` : 'no suggestion'}`,
+      `reaction:   ${s.reaction ? `${s.reaction.start}–${s.reaction.end} (return score ${s.reaction.returnScore})` : 'no suggestion'}`,
       `contact sheet: ${r.contactSheet}`,
     ].join('\n'));
   },

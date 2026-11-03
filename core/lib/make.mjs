@@ -42,7 +42,7 @@ export async function make(item, { out } = {}) {
     } else {
       const clip = p.__clip;
       const { range, explicit, suggestion } = effectiveRange(p, clip);
-      if (!range) throw new UserError(`${p.name}: the video is too short to find a ${p.kind} range; choose one with set-range`);
+      if (!range) throw new UserError(`${p.name}: no ${p.kind} range could be suggested for this video; choose one with set-range`);
       checkRange(p, clip, range);
       p.__range = range;
       p.__frames = sampledFrames(p, range);

@@ -255,7 +255,7 @@ export async function render(mount, { route, data, reload }) {
       h('div.range-top',
         h('div.loop-box', canvas, h('small.muted', 'canlı önizleme')),
         h('div.range-side', info, p.kind === 'locomotion' ? measure : null,
-          r.suggestion ? h('p.muted', `Önerilen: ${sug[0]}–${sug[1]}${r.suggestion.score != null ? ` (döngü kapanma puanı ${r.suggestion.score}; düşük daha iyi)` : ''}${r.suggestion.returnScore != null ? ` (ilk duruşa dönüş puanı ${r.suggestion.returnScore})` : ''}`) : h('p.muted', 'Öneri bulunamadı; aralığı elle seç.'),
+          r.suggestion ? h('p.muted', `Önerilen: ${sug[0]}–${sug[1]}${r.suggestion.score != null ? ` (döngü kapanma puanı ${r.suggestion.score}; düşük daha iyi)` : ''}${r.suggestion.returnScore != null ? ` (ilk duruşa dönüş puanı ${r.suggestion.returnScore})` : ''}`) : h('p.muted', 'Öneri yok: aralığı elle seç.'),
           h('div.row',
             sug ? h('button', { type: 'button', onclick: () => { sel = [...sug]; pending = null; paint(); } }, 'Öneriyi kullan') : null,
             saveBtn, saveState),
