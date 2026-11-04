@@ -1,12 +1,14 @@
 // Editor for the image layers of a static item. Works on item.layers in place and calls onChange
 // after every edit. onImage(layer, file) keeps or uploads a dropped image (the new item page keeps
-// it until the item exists); imageUrl(layer) previews the layer's current image, or null.
+// it until the item exists); imageUrl(layer) previews the layer's current image, or null;
+// keyPreview(layer, key), when given, resolves to the URL of the image cleaned with that setting.
+import { keyEditor } from './key-editor.js';
 import { clear, dropZone, extOf, h } from './ui.js';
 
 const NAME = /^[a-z][a-z0-9_]*$/;
 export const LAYER_EXTS = ['png', 'jpg', 'webp'];
 
-export function layerEditor(item, { keyDefault, onChange, onImage, imageUrl }) {
+export function layerEditor(item, { keyDefault, onChange, onImage, imageUrl, keyPreview }) {
   const root = h('div.plan');
   item.layers ??= [];
   const changed = (rerender = false) => { onChange(); if (rerender) draw(); };
@@ -27,8 +29,23 @@ export function layerEditor(item, { keyDefault, onChange, onImage, imageUrl }) {
       l.name = v;
       changed();
     });
-    const key = h('input', { type: 'checkbox', checked: l.key ?? keyDefault });
-    key.addEventListener('change', () => { l.key = key.checked; changed(); });
+    // On/off here; the settings of an image being cleaned below it.
+    const key = h('input', { type: 'checkbox', checked: (l.key ?? keyDefault) !== false });
+    const src = imageUrl(l);
+    let settings = typeof l.key === 'object' ? l.key : true;
+    const editor = keyEditor({
+      value: l.key,
+      onChange: (v) => { settings = v; l.key = v; changed(); },
+      preview: keyPreview && src ? (k) => (key.checked ? keyPreview(l, k) : null) : null,
+    });
+    const keyBox = h('div.layer-key', editor);
+    keyBox.hidden = !key.checked;
+    key.addEventListener('change', () => {
+      l.key = key.checked ? settings : false;
+      keyBox.hidden = !key.checked;
+      if (key.checked) editor.refresh();
+      changed();
+    });
     const z = number(l.z ?? i, { label: `${l.name} z sırası`, onInput: (v) => { if (v == null) delete l.z; else l.z = Math.round(v); changed(); } });
     const pivotOn = h('input', { type: 'checkbox', checked: !!l.pivot });
     const px = number(l.pivot?.x ?? 0.5, { label: `${l.name} pivot x`, min: 0, max: 1, step: 0.05, onInput: (v) => { if (l.pivot && v != null) { l.pivot.x = v; changed(); } } });
@@ -39,7 +56,6 @@ export function layerEditor(item, { keyDefault, onChange, onImage, imageUrl }) {
       px.disabled = py.disabled = !pivotOn.checked;
       changed();
     });
-    const src = imageUrl(l);
     const preview = h('div.layer-preview.checker', src ? h('img', { src, alt: `${l.name} görseli` }) : h('span.muted', 'görsel yok'));
     const drop = dropZone({
       label: src ? 'Görseli değiştir' : 'Görseli buraya bırak', hint: `PNG, JPG ya da WebP · ${l.image}`, accept: 'image/png,image/jpeg,image/webp',
@@ -61,12 +77,13 @@ export function layerEditor(item, { keyDefault, onChange, onImage, imageUrl }) {
         h('button.icon', { type: 'button', title: 'Yukarı', 'aria-label': `${l.name} yukarı`, disabled: i === 0, onclick: () => move(-1) }, '↑'),
         h('button.icon', { type: 'button', title: 'Aşağı', 'aria-label': `${l.name} aşağı`, disabled: i === list.length - 1, onclick: () => move(1) }, '↓'),
         h('button.icon.danger', { type: 'button', title: 'Sil', 'aria-label': `${l.name} sil`, disabled: list.length === 1, onclick: () => { list.splice(i, 1); changed(true); } }, '×')),
-      h('div.layer-body', drop, preview));
+      h('div.layer-body', drop, preview),
+      keyBox);
   }
 
   function draw() {
     clear(root,
-      h('p.muted', '"Arka planı temizle" açıksa düz arka plan silinir ve katman saydam sprite olur; kapalıysa görsel olduğu gibi kalır (opak arka plan katmanı). Görsel zaten saydamsa kendi alfası korunur. Pivot 0–1 arası, figürün kutusuna göredir.'),
+      h('p.muted', '"Arka planı temizle" açıksa düz arka plan silinir ve katman saydam sprite olur; kapalıysa görsel olduğu gibi kalır (opak arka plan katmanı). Özel temizlik ayarının sonucu dama deseni üzerinde önizlenir. Görsel zaten saydamsa kendi alfası korunur. Pivot 0–1 arası, figürün kutusuna göredir.'),
       h('ol.pose-list', item.layers.map(row)),
       h('button', { type: 'button', onclick: () => {
         let n = 1; while (item.layers.some((l) => l.name === `layer_${n}`)) n++;

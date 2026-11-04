@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
-import { keyDir } from './key.mjs';
+import { keyDir, keyTag } from './key.mjs';
 import { progress, UserError } from './log.mjs';
 import { fileKey, listFrames } from './util.mjs';
 
@@ -70,12 +70,22 @@ export function colourConversion(info) {
   return { matrix, range };
 }
 
-// Returns { dir, src, key, info } where src/key hold f000.png… and info is the video metadata.
-export async function extract(video, cacheRoot) {
+// Returns { dir, src, key, tag, info } where src/key hold f000.png… and info is the video metadata.
+// src is shared; each background removal setting keys into its own key<tag> folder (tag '' for
+// the defaults), so changing the setting re-keys without running ffmpeg again.
+export async function extract(video, cacheRoot, keyOpts) {
   if (!fs.existsSync(video)) throw new Error(`video not found: ${video}`);
   const dir = path.join(cacheRoot, `${path.basename(video, path.extname(video))}-${fileKey(video)}`);
-  const src = path.join(dir, 'src'), key = path.join(dir, 'key'), infoFile = path.join(dir, 'info.json');
-  if (fs.existsSync(infoFile)) return { dir, src, key, info: JSON.parse(fs.readFileSync(infoFile, 'utf8')) };
+  const tag = keyTag(keyOpts);
+  const src = path.join(dir, 'src'), key = path.join(dir, `key${tag}`), infoFile = path.join(dir, 'info.json');
+  if (fs.existsSync(infoFile)) {
+    const info = JSON.parse(fs.readFileSync(infoFile, 'utf8'));
+    if (!fs.existsSync(key)) {
+      progress('removing background', `${info.frames} frames`);
+      await keyInto(src, key, keyOpts);
+    }
+    return { dir, src, key, tag, info };
+  }
 
   const { ffmpeg } = ffmpegTools();
   const meta = await probe(video);
@@ -97,10 +107,20 @@ export async function extract(video, cacheRoot) {
 
   const info = { duration: meta.duration, fps: meta.fps, width: meta.width, height: meta.height, frames: files.length, colour: conv };
   progress('removing background', `${info.frames} frames`);
-  info.background = await keyDir(src, key);
+  info.background = await keyInto(src, key, keyOpts);
   info.frameCount = listFrames(key).length;
   fs.writeFileSync(infoFile, JSON.stringify(info, null, 1));
-  return { dir, src, key, info };
+  return { dir, src, key, tag, info };
+}
+
+// Keys into a temporary folder first: a key folder that exists is complete.
+async function keyInto(src, key, keyOpts) {
+  const tmp = `${key}.tmp`;
+  fs.rmSync(tmp, { recursive: true, force: true });
+  const bg = await keyDir(src, tmp, keyOpts);
+  fs.rmSync(key, { recursive: true, force: true });
+  fs.renameSync(tmp, key);
+  return bg;
 }
 
 // Half-size frames, SHEET_COLS per row, on white: what the range picker shows.

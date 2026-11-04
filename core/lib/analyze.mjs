@@ -115,10 +115,10 @@ const ANALYSIS_VERSION = 2; // 2: transition suggestion is null when no motion i
 const STEPS = [1, 2, 3, 4];
 
 // Per-frame measurements and every suggestion of one extracted video, cached next to its frames
-// (analysis.json) so status, the range picker and make do not re-read 100+ frames each time.
+// (analysis<tag>.json, one per background removal setting) so status, the range picker and make do not re-read 100+ frames each time.
 // Comparison thumbnails are not cached; they are only needed to compute suggestions.
 export async function analyzeClip(ex) {
-  const file = path.join(ex.dir, 'analysis.json');
+  const file = path.join(ex.dir, `analysis${ex.tag ?? ''}.json`);
   if (fs.existsSync(file)) {
     const a = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (a.version === ANALYSIS_VERSION) return a;

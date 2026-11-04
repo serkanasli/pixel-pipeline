@@ -149,6 +149,7 @@ node core/cli.mjs export items/fox/item.json --to ../app/assets/items  # paketi 
 | `video` | İsteğe bağlı; verilmezse `videos/<ad>.mp4` (ya da `.mov`, `.m4v`, `.webm`). |
 | `range` | `[başlangıç, bitiş]`, 24 fps kaynak kare indeksleri. Döngülerde bitiş, başlangıçla eşleşen karedir (oynatılmaz) ve aralık adım sayısının katıdır. Verilmezse paket önerilen aralıkla yapılır. |
 | `start` | Başlangıç karesi: `below` (altta boşluk, 0–0,6), `maxFigure` (figürün en büyük yüksekliği, 0,1–1), `width`, `height` (varsayılan 1600×900). `below` ve `maxFigure` yalnızca çapadan başlayan pozlarda geçerlidir. |
+| `key` | İsteğe bağlı arka plan temizliği ayarı (videolu pozlar ve `image` alan tek kareler; bkz. [Arka plan temizliği](#arka-plan-temizliği)). Başka bir pozun karesini alan tek karede verilmez; o kare kaynak pozun ayarıyla temizlenir. |
 
 **Davranış (`behavior`)**
 
@@ -214,7 +215,7 @@ Bazı öğeler video gerektirmez. Araç onları da aynı ilkelerle paketler: tek
 |---|---|
 | `name` | snake_case, tekil. Pozlar varsa `root` ayrılmıştır. |
 | `image` | Öğe klasöründe PNG, JPG ya da WebP. |
-| `key` | `true`: düz arka plan temizlenir, saydam sprite olur. `false`: görsel olduğu gibi kalır (opak arka plan). Verilmezse türün varsayılanı. Görsel zaten saydamsa alfa her durumda korunur. |
+| `key` | `true`: düz arka plan temizlenir, saydam sprite olur. `false`: görsel olduğu gibi kalır (opak arka plan). Ayar nesnesi: arka plan bu ayarla temizlenir (bkz. [Arka plan temizliği](#arka-plan-temizliği)). Verilmezse türün varsayılanı. Görsel zaten saydamsa alfa her durumda korunur. |
 | `pivot` | İsteğe bağlı, 0–1, figürün kutusuna göre. Manifest'e katman görseline göre yazılır. |
 | `z` | Çizim sırası; verilmezse listedeki sırası. |
 
@@ -226,6 +227,22 @@ Bazı öğeler video gerektirmez. Araç onları da aynı ilkelerle paketler: tek
 **Türler.** `templates/types/<tür>.json` yalnızca varsayılanları taşır: katmanların `key` değeri ve katmanlı öğenin `anchor`'ı. Tür kodda davranış dalı açmaz; yeni bir tür için bir JSON dosyası eklemek yeterlidir.
 
 **Manifest aktarımı.** `item.json`'daki `manifest` nesnesi (`effects`, `onPress`, `groundShadow`, `reflection`, `galaxyBlend`, `idle`…) üretilen manifest'e olduğu gibi eklenir. Araç bu alanları yorumlamaz; denetim hedef uygulamanın doğrulayıcısındadır. Aracın yazdığı alanlar (`assets`, `layers`, `poses`, `size`, `anchor`, `id`, `name`, `version`, `type`…) buradan ezilemez; denenirse doğrulama alanın adını söyler. `assets` yalnızca aracın yazmadığı girişleri alabilir (`sounds` gibi); ses dosyalarını araç kopyalamaz. `behavior` ile aynı alanı (örneğin `onPress`) iki yerden vermek de hatadır.
+
+## Arka plan temizliği
+
+Video kareleri ve görseller düz renkli zeminden temizlenir. Zemin rengi kenarların ortancasıdır; kenardan başlayan bir dolgu, zemine yakın pikselleri geçer ve koyu kontur onu durdurur. Pozlarda ve katmanlarda `key` bir nesne olarak verilirse temizlik o ayarla yapılır:
+
+```json
+"key": { "flood": 10, "pockets": false, "fringe": 48 }
+```
+
+| Alan | Varsayılan | Anlamı |
+|---|---|---|
+| `flood` | 42 | Dolgunun geçebileceği en büyük renk uzaklığı (kanal başına, 0–255). |
+| `pockets` | `true` | Figürün içindeki kapalı zemin cepleri (bacak arası gibi), yeterince saf zemin pikseli tutuyorsa silinir. |
+| `fringe` | 0 (kapalı) | Kenar halesi: silinen zemine değen ve zemine bu uzaklıktan (0–255) yakın opak pikseller en fazla 3 geçişte silinir. Koyu kontur bu temizliği durdurur. |
+
+Verilmeyen alan varsayılanını alır. `true`, `{}` ya da alanın hiç verilmemesi aynı sonucu verir; eski paketler byte'ı byte'ına aynı kalır. Açık renkli bir figür zemine yakınsa (gri zeminde gümüş saç), varsayılan ayar saçın içinde delik açabilir. Bu durumda düşük `flood`, kapalı `pockets` ve açık `fringe` kullanılır. Arayüzde poz sayfası ve katman düzenleyici ayarı gösterir; sonuç dama deseni üzerinde önizlenir. Temizlenmiş kareler ve ölçümler ayar başına ayrı önbelleğe yazılır, bu yüzden ayar değişince yalnızca temizlik yeniden yapılır.
 
 ## Dışa aktarma
 
@@ -255,7 +272,7 @@ Not: Video modellerinin güvenlik filtreleri bazı masum kalıplarda isteği red
 ## Nasıl çalışır
 
 1. ffmpeg videodan 24 fps, tam çözünürlükte PNG kareler çıkarır. Renk matrisi ve aralığı açıkça ayarlanır; böylece aynı video her platformda aynı kareleri verir. Kare sayfası sharp ile yapılır.
-2. Arka plan kenardan taşma doldurmayla temizlenir; koyu kontur dolguyu durdurur.
+2. Arka plan kenardan taşma doldurmayla temizlenir; koyu kontur dolguyu durdurur. Ayar poz ve katman başına verilebilir (bkz. [Arka plan temizliği](#arka-plan-temizliği)).
 3. Kareler ölçülür: döngü noktası, hareket aralığı, yere basan ayağın hızı. Ölçümler video başına önbelleğe yazılır.
 4. Bütün pozların seçilen kareleri **tek piksel ızgarasına** ve **tek k-means paletine** indirilir (dithering yok, kırıntılar silinir).
 5. Her kare çapa noktası ve zemin hattına göre yerleştirilir. Takip eden kamerada zemin her karenin en alt pikselidir; sabit kamerada kameranın zeminidir. `startsFrom` ile pozlar birbirinin devamı olur.

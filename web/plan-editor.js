@@ -41,6 +41,7 @@ export function planEditor(plan, { onChange }) {
       const wasImage = !!p.image;
       delete p.image;
       p.startsFrom = sel.value === 'anchor' ? 'anchor' : { pose, frame: /^\d+$/.test(frame) ? Number(frame) : frame };
+      if (p.kind === 'still') delete p.key;
       if (p.startsFrom !== 'anchor' && p.start) { delete p.start.below; delete p.start.maxFigure; if (!Object.keys(p.start).length) delete p.start; }
       changed(wasImage);
     });
@@ -91,6 +92,7 @@ export function planEditor(plan, { onChange }) {
           if (others(p)[0]) p.startsFrom = { pose: others(p)[0].name, frame: 'first' };
           else { delete p.startsFrom; p.image = 'anchor'; }
         }
+        if (p.startsFrom) delete p.key; // a frame of another pose is cleaned with that pose's setting
       } else {
         p.fps ??= 12;
         if (p.image) { delete p.image; p.startsFrom = 'anchor'; }

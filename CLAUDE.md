@@ -21,16 +21,16 @@ Local, unshared instructions live in `CLAUDE.local.md` (git-ignored).
   - `images.mjs`: still and layer images (background removal or own alpha), cached
   - `frames.mjs`: ffmpeg extraction + cache in `<item>/.pixel-cache`
   - `analyze.mjs`: measurements and suggestions, cached as `analysis.json`
-  - `key.mjs`, `pixelize.mjs`, `pack.mjs`: background removal, shared grid + palette, atlas
+  - `key.mjs`, `pixelize.mjs`, `pack.mjs`: background removal (per pose / layer settings), shared grid + palette, atlas
   - `make.mjs`, `preview.mjs` + `preview.html`: the package (atlas, layer images, manifest passthrough, canvas warnings)
   - `export.mjs`: copies a made package to `<target>/<id>/`
   - `prep.mjs`, `startframe.mjs`: start frames, from the anchor or chained
   - `prompt.mjs`: video prompt
   - `status.mjs`: stages and next step
-  - `inspect.mjs`: inspect and set-range
+  - `inspect.mjs`: inspect, set-range and the background removal preview
   - `log.mjs`: terminal + `<item>/logs/YYYY-MM-DD.log`, AsyncLocalStorage context
   - `workspace.mjs`, `events.mjs`, `watch.mjs`: server side
-- `web/`: `app.js` (routes, step bar, next band, log drawer, SSE), `views/*.js`, `plan-editor.js`, `layer-editor.js`, `item-form.js`, `ui.js` (widgets and all Turkish state texts), `api.js`.
+- `web/`: `app.js` (routes, step bar, next band, log drawer, SSE), `views/*.js`, `plan-editor.js`, `layer-editor.js`, `key-editor.js`, `item-form.js`, `ui.js` (widgets and all Turkish state texts), `api.js`.
 - `templates/plans/*.json`: plan templates (data), with poses or layers. `templates/types/*.json`: item types (default `key`, `anchor`). `templates/video-prompt.json`: the prompt template.
 - `config.local.json` (git-ignored): the UI's working folder.
 
@@ -45,7 +45,8 @@ node core/cli.mjs export <item.json> --to <dir>          # copy the package to <
 
 ## Conventions and invariants
 - Source frames are always sampled at 24 fps; a pose's fps picks every 2nd (12), 3rd (8) or 4th (6) frame. `range` values are 24 fps source indices. For looping kinds the range end is the frame that matches the start (not played) and the span is a multiple of the step.
-- ffmpeg decoding is deterministic: explicit YUV matrix and range (tags, else BT.709 from 720 lines, BT.601 below; limited range), bitexact flags. Cache layout: `<item>/.pixel-cache/<video>-<hash>/src|key|info.json|analysis.json`.
+- ffmpeg decoding is deterministic: explicit YUV matrix and range (tags, else BT.709 from 720 lines, BT.601 below; limited range), bitexact flags. Cache layout: `<item>/.pixel-cache/<video>-<hash>/src|key|info.json|analysis.json`; images under `images/<name>-<hash>/keyed.png`.
+- Background removal: `key` on a pose (video or still image) or layer is `true`, `false` (layers) or `{ flood, pockets, fringe }`; missing fields take the defaults (42, true, 0 = off). The defaults keep the plain cache names, so packages made without settings stay byte-identical; other settings key into `key-k<hash>/`, `analysis-k<hash>.json`, `keyed-k<hash>.png` next to the shared `src/`. A still taken from another pose has no `key`; it follows that pose.
 - One pixel grid and one palette per item, across all poses and layers. Never quantise per frame (colour flicker). Video frames are downscaled with a cubic kernel, images with nearest.
 - Images (still `image`, layers next to poses) are at the anchor's scale: the anchor's figure is `pixelWidth` art px wide. Without videos the grid comes from the images. Layers share one scale: a full (`key: false`) layer fits `canvas.width` when given, else the first layer's figure is `pixelWidth` wide.
 - Ground row: when nothing hangs below the ground, the row on the ground is the canvas's (or layer image's) last row and `anchor.y` is 1. Only something swinging below the ground (the wolf's tail) leaves room under it and gives `anchor.y` < 1.
@@ -64,6 +65,7 @@ node core/cli.mjs export <item.json> --to <dir>          # copy the package to <
 
 ## Verifying changes
 - Core: delete `examples/shadow-wolf/.pixel-cache`, run `make` and compare with the hand-tuned wolf test numbers (walk 16 frames from source 42–74, stride ≈ 81 pt, curl_up 2–93, tail_wag 0–86, package ≈ 415 KB). `inspect` must suggest the same ranges. Open `build/<id>/preview.html`.
+- Background removal: `make` the examples without `key` settings and compare package files byte for byte with a build from before the change (report.json differs only in `madeAt`).
 - Static items: `examples/campfire-base` (`node make-test-image.mjs`, then `make`): one keyed layer, package ≤150 KB, edge pixels transparent. Also try an image-only character (`character-still`) and a background with a `key: false` and a `key: true` layer.
 - CLI without macOS tools: run with a PATH that holds only node, ffmpeg and ffprobe.
 - UI: run `npm start`, go through new item → start frame → prompt → video → range → package in a browser, and new item → layers → package → export, including a video or image added from outside the UI and a broken item.json.

@@ -1,8 +1,9 @@
 // Pose page, top to bottom in the order of the work: start frame -> video prompt -> video ->
-// range. Each section redraws only when its own inputs change, so a file change elsewhere does
+// range -> background removal. Each section redraws only when its own inputs change, so a file change elsewhere does
 // not reset a video that is playing or a range being chosen. A still has one section: where its
-// frame comes from (a frame of another pose or an image).
+// frame comes from (a frame of another pose or an image), with the background removal of an image.
 import { api, fileUrl, itemUrl, poseUrl } from '../api.js';
+import { keyEditor } from '../key-editor.js';
 import { actionButton, clear, dropZone, errorCard, extOf, FIELD, h, KIND, sourceText, startsFromText, toast } from '../ui.js';
 
 const START_DEFAULTS = { below: 0.2, maxFigure: 0.66 };
@@ -11,7 +12,7 @@ const TILE_W = 104; // contact sheet tile width on screen
 
 export async function render(mount, { route, data, reload }) {
   const dir = route.dir, name = route.pose;
-  const sections = { head: h('div'), start: h('section.panel'), prompt: h('section.panel'), video: h('section.panel'), range: h('section.panel'), nav: h('nav.pose-nav') };
+  const sections = { head: h('div'), start: h('section.panel'), prompt: h('section.panel'), video: h('section.panel'), range: h('section.panel'), key: h('section.panel'), nav: h('nav.pose-nav') };
   const keys = {};
   let d = data;
   const pose = () => d.item.poses.find((p) => p.name === name);
@@ -266,6 +267,35 @@ export async function render(mount, { route, data, reload }) {
     return { stop() { cancelAnimationFrame(raf); clearTimeout(measureTimer); } };
   }
 
+  // ---------- 5. background removal ----------
+  // The pose's "key" with a preview of its first frame (or its image) cleaned with the setting
+  // being edited; saved only on request, since a saved change re-keys every frame of the video.
+  function keySection() {
+    const p = pose();
+    let next = p.key ?? true;
+    const out = h('div');
+    const same = () => JSON.stringify(next) === JSON.stringify(p.key ?? true);
+    const saveBtn = h('button.primary', { type: 'button', disabled: true, onclick: async () => {
+      clear(out);
+      saveBtn.disabled = true;
+      try { await savePose({ key: next === true ? undefined : next }); toast('Temizlik ayarı kaydedildi'); await reload(); }
+      catch (e) { out.append(errorCard(e, 'Kaydedilemedi')); saveBtn.disabled = same(); }
+    } }, 'Ayarı kaydet');
+    const editor = keyEditor({
+      value: p.key,
+      onChange: (v) => { next = v; saveBtn.disabled = same(); },
+      preview: async (key) => fileUrl(dir, (await api.post(`${itemUrl(dir)}/key-preview`, { pose: name, key })).file),
+    });
+    return [editor, h('div.row', saveBtn), out];
+  }
+  function drawKey() {
+    const p = pose(), s = stat(), box = sections.key;
+    if (!s.hasVideo) { clear(box, h('h2', '5. Arka plan temizliği'), h('p.muted', 'Video gelince ilk karesinde temizlik ayarını deneyebilirsin.')); return; }
+    clear(box, h('h2', '5. Arka plan temizliği ', p.key ? h('span.badge', 'özel ayar') : null),
+      h('p.muted', `Önizleme, aralığın ilk karesini dama deseni üzerinde gösterir. Kaydedilen ayar videonun bütün karelerine uygulanır ve aralık önerileri yeniden ölçülür.`),
+      keySection());
+  }
+
   // ---------- navigation ----------
   function drawNav() {
     const order = d.status.poses.map((p) => p.name), i = order.indexOf(name);
@@ -287,7 +317,7 @@ export async function render(mount, { route, data, reload }) {
       clear(out);
       const patch = kind === 'anchor' ? { image: 'anchor', startsFrom: undefined }
         : kind === 'file' ? { image: p.image && p.image !== 'anchor' ? p.image : `${p.name}.png`, startsFrom: undefined }
-        : { image: undefined, startsFrom: { pose: others[0].name, frame: 'last' } };
+        : { image: undefined, key: undefined, startsFrom: { pose: others[0].name, frame: 'last' } };
       try { await savePose(patch); await reload(); } catch (e) { out.append(errorCard(e, 'Kaydedilemedi')); }
     };
     const radio = (kind, label, disabled) => {
@@ -305,7 +335,7 @@ export async function render(mount, { route, data, reload }) {
         await reload();
       },
     });
-    const img = p.image && s.stage === 'done' ? h('div.anchor-preview.checker', h('img', { src: fileUrl(dir, s.image, Date.now()), alt: `${name} görseli` })) : null;
+    const img = p.image && s.stage === 'done' ? h('div', h('h3', 'Arka plan temizliği ', p.key ? h('span.badge', 'özel ayar') : null), keySection()) : null;
     clear(sections.start, h('h2', 'Tek kare'),
       h('div.radio', radio('pose', 'bir pozun karesi', !others.length), radio('anchor', 'çapa görseli'), radio('file', 'görsel dosyası')),
       out,
@@ -313,7 +343,8 @@ export async function render(mount, { route, data, reload }) {
         ? [h('p', `Bu poz ${startsFromText(p.startsFrom)} oluşur; videosu, başlangıç karesi ve promptu yoktur. Hangi kare olduğu planda seçilir.`),
           s.stage === 'done' ? h('p.ok', 'Kaynak poz tamam, bu kare pakete girer.') : h('p', `${s.waitsFor} pozu tamamlanınca hazır olur. `, h('a', { href: `#/item/${encodeURIComponent(dir)}/pose/${s.waitsFor}` }, `${s.waitsFor} pozuna git`))]
         : [h('p', 'Görsel, videolu pozlarla aynı arka plan temizlemeden, ızgaradan ve paletten geçer. Ölçeği çapadan gelir: çapadaki figür "piksel genişliği" kadar sanat pikseli olur. Ayak noktası en alt pikseldir.'),
-          current === 'file' ? h('div.anchor-row', drop, img) : img,
+          current === 'file' ? drop : null,
+          img,
           s.stage === 'done' ? h('p.ok', 'Görsel hazır, bu kare pakete girer.')
             : current === 'anchor' ? h('p', 'Önce çapa görselini ekle. ', h('a', { href: `#/item/${encodeURIComponent(dir)}?edit=1` }, 'Öğe ayarları'))
             : h('p.muted', `Beklenen dosya: ${p.image}`)]);
@@ -325,17 +356,22 @@ export async function render(mount, { route, data, reload }) {
     start: () => JSON.stringify([pose().startsFrom, pose().start, stat().startFrame, stat().hasVideo]),
     prompt: () => JSON.stringify([d.item.subject, d.item.style, d.item.persistentDetails, d.item.facing, pose().motion, pose().kind, stat().startFrame]),
     video: () => JSON.stringify([stat().video, stat().hasVideo, pose().range]),
-    range: () => JSON.stringify([stat().video, stat().hasVideo, pose().range, pose().fps, pose().kind]),
+    range: () => JSON.stringify([stat().video, stat().hasVideo, pose().range, pose().fps, pose().kind, pose().key]),
+    key: () => JSON.stringify([stat().video, stat().hasVideo, pose().range, pose().key]),
     nav: () => JSON.stringify(d.status.poses.map((p) => p.name)),
   };
-  const draw = { head: drawHead, start: drawStart, prompt: drawPrompt, video: drawVideo, range: drawRange, nav: drawNav };
+  const draw = { head: drawHead, start: drawStart, prompt: drawPrompt, video: drawVideo, range: drawRange, key: drawKey, nav: drawNav };
   function refresh(force) {
     if (pose().kind === 'still') {
-      for (const k of ['prompt', 'video', 'range']) sections[k].hidden = true;
+      for (const k of ['prompt', 'video', 'range', 'key']) sections[k].hidden = true;
+      // Unchanged inputs keep a background removal setting being tried.
+      const key = JSON.stringify([pose(), stat(), d.status.poses.map((p) => p.name)]);
+      if (!force && keys.still === key) return;
+      keys.still = key;
       drawHead(); drawStill(); drawNav();
       return;
     }
-    for (const k of ['prompt', 'video', 'range']) sections[k].hidden = false;
+    for (const k of ['prompt', 'video', 'range', 'key']) sections[k].hidden = false;
     for (const k of Object.keys(draw)) {
       const key = inputs[k]();
       if (!force && keys[k] === key) continue;
@@ -344,7 +380,7 @@ export async function render(mount, { route, data, reload }) {
     }
   }
 
-  mount.append(sections.head, sections.start, sections.prompt, sections.video, sections.range, sections.nav);
+  mount.append(sections.head, sections.start, sections.prompt, sections.video, sections.range, sections.key, sections.nav);
   refresh(true);
 
   return {

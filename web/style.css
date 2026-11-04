@@ -118,6 +118,16 @@ details.settings > summary h2 { display: inline; }
 .layer-preview { border-radius: 7px; min-height: 90px; display: grid; place-items: center; padding: 6px; }
 .layer-preview img { max-width: 100%; max-height: 180px; object-fit: contain; }
 .layer-row input[type="number"] { width: 64px; }
+/* Background removal settings and the cleaned result. */
+.key-editor { display: grid; gap: 8px; }
+.key-fields { display: grid; gap: 6px; padding-left: 4px; }
+.key-fields input[type="number"] { width: 64px; }
+.key-fields small, .key-editor > label small { flex: 1 1 260px; }
+.key-editor > label.inline, .key-fields label.inline { flex-wrap: wrap; }
+.key-preview { border-radius: 7px; min-height: 120px; display: grid; place-items: center; padding: 8px; }
+.key-preview img { max-width: 100%; max-height: 320px; object-fit: contain; }
+.key-preview.busy img { opacity: 0.5; }
+.layer-key { margin-top: 8px; }
 .layer-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
 .layer-grid figure { margin: 0; display: grid; gap: 4px; max-width: 100%; }
 .layer-grid .checker { border-radius: 7px; padding: 8px; overflow: auto; max-width: 100%; }

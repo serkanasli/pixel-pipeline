@@ -6,6 +6,7 @@ import path from 'node:path';
 import { analyzeClip, groundSpeed } from './analyze.mjs';
 import { extract, SOURCE_FPS } from './frames.mjs';
 import { prepareImage } from './images.mjs';
+import { keyTag } from './key.mjs';
 import { UserError } from './log.mjs';
 import { LOOPING } from './schema.mjs';
 import { fileKey, resolveInside, round } from './util.mjs';
@@ -57,11 +58,12 @@ export async function poseClip(item, p) {
   if (!v?.exists) return null;
   if (!item.__clips) Object.defineProperty(item, '__clips', { value: new Map(), enumerable: false });
   const memo = item.__clips;
-  if (!memo.has(v.abs)) {
-    const ex = await extract(v.abs, path.join(item.__dir, '.pixel-cache'));
-    memo.set(v.abs, { ...ex, ...(await analyzeClip(ex)), video: v });
+  const id = `${v.abs}|${keyTag(p.key)}`;
+  if (!memo.has(id)) {
+    const ex = await extract(v.abs, path.join(item.__dir, '.pixel-cache'), p.key);
+    memo.set(id, { ...ex, ...(await analyzeClip(ex)), video: v });
   }
-  return memo.get(v.abs);
+  return memo.get(id);
 }
 
 // The analysis of the pose's video if it was already made; never extracts frames. Lets status
@@ -69,7 +71,7 @@ export async function poseClip(item, p) {
 export function cachedAnalysis(item, p) {
   const v = poseVideo(item, p);
   if (!v?.exists) return null;
-  const file = path.join(item.__dir, '.pixel-cache', `${path.basename(v.abs, path.extname(v.abs))}-${fileKey(v.abs)}`, 'analysis.json');
+  const file = path.join(item.__dir, '.pixel-cache', `${path.basename(v.abs, path.extname(v.abs))}-${fileKey(v.abs)}`, `analysis${keyTag(p.key)}.json`);
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
@@ -124,11 +126,13 @@ export async function gridFactor(item) {
 // Source px per art pixel for images. Images are taken at the anchor's scale: the figure in the
 // anchor is pixelWidth art pixels wide, the same as the reference pose's first frame (which
 // normally starts from the anchor). Without an anchor the first still image sets the scale.
+// A still showing that image measures it with its own background removal setting.
 export async function imageFactor(item) {
   let abs = item.anchor ? itemPath(item, item.anchor) : null;
   if (!abs || !fs.existsSync(abs)) abs = posesOf(item).map((p) => poseImage(item, p)).find((i) => i?.exists)?.abs ?? null;
   if (!abs) throw new UserError('the pixel grid is measured from the anchor image or a still image, and neither is there yet');
-  const img = await prepareImage(abs, path.join(item.__dir, '.pixel-cache'));
+  const owner = posesOf(item).find((p) => poseImage(item, p)?.abs === abs);
+  const img = await prepareImage(abs, path.join(item.__dir, '.pixel-cache'), { key: owner?.key });
   return img.m.width / (item.pixelWidth ?? DEFAULT_PIXEL_WIDTH);
 }
 

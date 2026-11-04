@@ -7,6 +7,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { groundSpeed } from './analyze.mjs';
 import { prepareImage } from './images.mjs';
+import { keyOptions, keyTag } from './key.mjs';
 import { progress, UserError } from './log.mjs';
 import { pack, writeAtlas } from './pack.mjs';
 import { pixelFile, pixelize } from './pixelize.mjs';
@@ -46,7 +47,7 @@ export async function make(item, { out } = {}) {
     if (p.kind === 'still' && p.image) {
       const img = poseImage(item, p);
       if (!img.exists) throw new UserError(`${p.name}: ${img.rel ? `image not found: ${img.rel}` : 'the item has no anchor image yet'}`);
-      p.__image = await prepareImage(img.abs, cacheRoot);
+      p.__image = await prepareImage(img.abs, cacheRoot, { key: p.key });
       p.__frames = [0];
       r.image = img.rel;
     } else if (p.kind === 'still') {
@@ -82,6 +83,7 @@ export async function make(item, { out } = {}) {
       if (refName(p)) p.__from = continuation(byName(item, p.startsFrom.pose), p.startsFrom.frame, byName(item, p.startsFrom.pose).__range);
     }
     r.frames = p.__frames.length;
+    if (keyTag(p.key)) r.key = keyOptions(p.key); // only non-default settings are reported
     report.poses[p.name] = r;
   }
 
@@ -158,7 +160,7 @@ export async function make(item, { out } = {}) {
     madeAt: new Date().toISOString(),
     locomotion: manifest.locomotion ?? null,
   });
-  for (const l of images?.list ?? []) report.layers[l.name] = { file: l.file, z: l.z, w: l.w, h: l.h, kb: l.kb, background: l.mode };
+  for (const l of images?.list ?? []) report.layers[l.name] = { file: l.file, z: l.z, w: l.w, h: l.h, kb: l.kb, background: l.mode, ...(l.key ? { key: l.key } : {}) };
   if (report.packageKB > budget) warnings.push(`package is ${report.packageKB} KB, over the ${budget} KB budget; ${animated ? 'try fps 8 for slow poses or shorter ranges' : 'try fewer colours or a smaller pixelWidth or canvas'}`);
   if (packed && (packed.atlasSize.w > MAX_ATLAS_SIDE || packed.atlasSize.h > MAX_ATLAS_SIDE)) warnings.push(`atlas is ${packed.atlasSize.w}×${packed.atlasSize.h}, over ${MAX_ATLAS_SIDE} px per side`);
   canvasWarnings(item.canvas, packed, layers, warnings);
@@ -198,7 +200,8 @@ async function writeLayers(outDir, base, layers, anchor) {
       .png().toBuffer();
     await sharp(padded).extract({ left: x0, top: y0, width: box.w, height: box.h }).webp({ lossless: true, effort: 6 }).toFile(path.join(outDir, file));
     list.push({ name: l.name, file, z: l.z ?? i, pivot: l.pivot ? onImage(l.pivot) : null, w: box.w, h: box.h,
-      kb: round(fs.statSync(path.join(outDir, file)).size / 1024), mode: l.__image.mode });
+      kb: round(fs.statSync(path.join(outDir, file)).size / 1024), mode: l.__image.mode,
+      key: l.__image.mode === 'keyed' && keyTag(l.__key) ? keyOptions(l.__key) : null });
   }
   return { box, list, anchor: onImage(anchor) };
 }

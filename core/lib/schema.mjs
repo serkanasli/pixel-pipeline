@@ -5,6 +5,7 @@
 // an error. Only `make` needs every pose to have its video.
 import fs from 'node:fs';
 import path from 'node:path';
+import { KEY_DEFAULTS, KEY_LIMITS } from './key.mjs';
 import { UserError } from './log.mjs';
 import { listTypes } from './types.mjs';
 
@@ -18,10 +19,11 @@ export const OCCASIONAL_DEFAULTS = { weight: 1, wait: [5, 12] };
 
 const ITEM_FIELDS = ['schemaVersion', 'id', 'name', 'type', 'version', 'facing', 'template', 'anchor', 'subject', 'persistentDetails', 'style',
   'pixelWidth', 'ptPerPixel', 'colors', 'referencePose', 'output', 'export', 'canvas', 'poses', 'layers', 'behavior', 'manifest'];
-const POSE_FIELDS = ['name', 'kind', 'fps', 'startsFrom', 'image', 'motion', 'video', 'range', 'start'];
+const POSE_FIELDS = ['name', 'kind', 'fps', 'startsFrom', 'image', 'motion', 'video', 'range', 'start', 'key'];
 export const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
 const LAYER_FIELDS = ['name', 'image', 'key', 'pivot', 'z'];
 const START_FIELDS = Object.keys(START_DEFAULTS);
+const KEY_FIELDS = Object.keys(KEY_DEFAULTS);
 // Manifest fields the tool writes itself; item.json's "manifest" may not set them. "assets" may
 // only gain entries the tool does not write (e.g. "sounds").
 const GENERATED = ['schemaVersion', 'id', 'type', 'version', 'name', 'renderer', 'facing', 'size', 'anchor', 'layers', 'poses', 'locomotion', 'files'];
@@ -51,8 +53,9 @@ export function saveItem(item, file = item.__file) {
   validate(item);
   const clean = JSON.parse(JSON.stringify(item, (k, v) => (k.startsWith('__') ? undefined : v)));
   const ordered = orderKeys(clean, ITEM_FIELDS);
-  if (clean.poses) ordered.poses = clean.poses.map((p) => orderKeys(p, POSE_FIELDS));
-  if (clean.layers) ordered.layers = clean.layers.map((l) => orderKeys(l, LAYER_FIELDS));
+  const keyOrder = (o) => (isObj(o.key) ? { ...o, key: orderKeys(o.key, KEY_FIELDS) } : o);
+  if (clean.poses) ordered.poses = clean.poses.map((p) => orderKeys(keyOrder(p), POSE_FIELDS));
+  if (clean.layers) ordered.layers = clean.layers.map((l) => orderKeys(keyOrder(l), LAYER_FIELDS));
   fs.writeFileSync(file, formatJson(ordered) + '\n');
   return file;
 }
@@ -120,6 +123,10 @@ export function validate(item) {
     names.add(p.name);
     if (!KINDS.includes(p.kind)) err(`${at}: "kind" must be one of ${KINDS.join(', ')}`);
     if (p.motion !== undefined && !isStr(p.motion)) err(`${at}: "motion" must be a text`);
+    if (p.key !== undefined) {
+      if (p.kind === 'still' && p.startsFrom !== undefined) err(`${at}: a still taken from another pose uses that pose's frames; set "key" on ${p.startsFrom?.pose ?? 'that pose'}`);
+      validateKey(p.key, at, false, err);
+    }
     if (p.kind === 'still') {
       for (const k of ['fps', 'video', 'range', 'start']) if (p[k] !== undefined) err(`${at}: a still is one frame from another pose or an image, "${k}" is not used`);
       if ((p.startsFrom === undefined) === (p.image === undefined))
@@ -215,7 +222,7 @@ function validateLayers(item, poseNames, err) {
     names.add(l.name);
     if (!isStr(l.image) || !IMAGE_EXT.test(l.image)) err(`${at}: "image" must be a .png, .jpg or .webp file inside the item folder`);
     inside(l.image, `${at}: "image"`, err);
-    if (l.key !== undefined && typeof l.key !== 'boolean') err(`${at}: "key" must be true (remove the background) or false (keep the image as it is)`);
+    if (l.key !== undefined) validateKey(l.key, at, true, err);
     if (l.z !== undefined && !Number.isInteger(l.z)) err(`${at}: "z" must be a whole number`);
     if (l.pivot !== undefined) {
       if (!isObj(l.pivot)) err(`${at}: "pivot" must be { "x": …, "y": … }`);
@@ -223,6 +230,17 @@ function validateLayers(item, poseNames, err) {
       for (const k of ['x', 'y']) if (!(typeof l.pivot[k] === 'number' && l.pivot[k] >= 0 && l.pivot[k] <= 1)) err(`${at}: "pivot.${k}" must be a number between 0 and 1`);
     }
   });
+}
+
+// "key": true, false (layers only: keep the image as it is) or background removal settings.
+export function validateKey(key, at, allowFalse, err) {
+  if (key === true || (key === false && allowFalse)) return;
+  const what = `${allowFalse ? 'true (remove the background), false (keep the image as it is)' : 'true'} or { "flood": …, "pockets": …, "fringe": … }`;
+  if (!isObj(key)) err(`${at}: "key" must be ${what}`);
+  unknown(key, KEY_FIELDS, `${at}: key.`, err);
+  for (const [k, [lo, hi]] of Object.entries(KEY_LIMITS)) if (key[k] !== undefined && !(Number.isInteger(key[k]) && key[k] >= lo && key[k] <= hi))
+    err(`${at}: "key.${k}" must be a whole number between ${lo} and ${hi}${k === 'fringe' ? ' (0 = off)' : ''}`);
+  if (key.pockets !== undefined && typeof key.pockets !== 'boolean') err(`${at}: "key.pockets" must be true or false`);
 }
 
 // "manifest" is copied into the package manifest as it is; the target app validates it. Only

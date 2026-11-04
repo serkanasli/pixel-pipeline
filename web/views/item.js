@@ -59,7 +59,7 @@ export async function render(mount, { route, data, reload }) {
       h('div.thumb.checker', ok ? h('img', { src: fileUrl(dir, s.image, Date.now()), alt: `${s.name} görseli`, loading: 'lazy' }) : h('span.muted', 'görsel yok')),
       h('div.card-body',
         h('h2', h('code', s.name), h('span.kind', 'katman')),
-        h('p.muted', `z ${layer.z ?? i} · ${(layer.key ?? keyDefault()) ? 'arka planı temizlenir' : 'olduğu gibi kalır'} · ${s.image}`),
+        h('p.muted', `z ${layer.z ?? i} · ${(layer.key ?? keyDefault()) === false ? 'olduğu gibi kalır' : typeof layer.key === 'object' ? 'özel ayarla temizlenir' : 'arka planı temizlenir'} · ${s.image}`),
         ok ? h('p.ok', 'Tamam') : h('p.next-line', h('span.k', 'Sıradaki: '), 'görseli ekle'))));
   }
   const keyDefault = () => types.find((t) => t.name === current.item.type)?.key ?? true;
@@ -117,6 +117,7 @@ export async function render(mount, { route, data, reload }) {
       layerEditor(draft, {
         keyDefault: keyDefault(), onChange: mark,
         imageUrl: (l) => (saved(l) && d.status.layers.find((x) => x.name === l.name)?.hasImage ? fileUrl(dir, saved(l).image, Date.now()) : null),
+        keyPreview: async (l, key) => fileUrl(dir, (await api.post(`${itemUrl(dir)}/key-preview`, { image: saved(l).image, key })).file),
         onImage: async (l, file) => {
           if (!saved(l) || dirty) throw new Error('Önce katman listesini kaydet, sonra görseli bırak.');
           await api.upload(`${itemUrl(dir)}/layers/${encodeURIComponent(l.name)}/image?ext=${extOf(file)}`, file);

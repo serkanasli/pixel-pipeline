@@ -47,6 +47,8 @@ export async function render(mount, { route, data, reload }) {
     const layers = Object.entries(rep.layers ?? {}).sort(([, a], [, b]) => a.z - b.z);
     const fact = (k, v, bad) => h('div.fact', { class: bad ? 'bad' : '' }, h('span.k', k), h('span.v', v));
     const BG = { keyed: 'arka planı temizlendi', opaque: 'olduğu gibi', alpha: 'kendi saydamlığı' };
+    // Only non-default background removal settings are in the report.
+    const keyText = (k) => (k ? ` · özel temizlik: dolgu ${k.flood}, cepler ${k.pockets ? 'açık' : 'kapalı'}, hale ${k.fringe || 'kapalı'}` : '');
     clear(body,
       h('section.panel',
         h('h2', 'Rapor'),
@@ -66,11 +68,11 @@ export async function render(mount, { route, data, reload }) {
           h('thead', h('tr', h('th', 'Poz'), h('th', 'Tür'), h('th', 'Kare'), h('th', 'fps'), h('th', 'Kaynak'))),
           h('tbody', Object.entries(rep.poses).map(([n, p]) => h('tr',
             h('td', h('code', n)), h('td', KIND[p.kind]), h('td', String(p.frames)), h('td', p.fps ? String(p.fps) : '—'),
-            h('td', p.range ? `${p.range[0]}–${p.range[1]}${p.rangeChosen === false ? ' (önerilen)' : ''}` : p.sourceFrame != null ? `kare ${p.sourceFrame}` : p.image ? `görsel ${p.image}` : '—'))))) : null,
+            h('td', p.range ? `${p.range[0]}–${p.range[1]}${p.rangeChosen === false ? ' (önerilen)' : ''}` : p.sourceFrame != null ? `kare ${p.sourceFrame}` : p.image ? `görsel ${p.image}` : '—', keyText(p.key)))))) : null,
         layers.length ? h('table.poses',
           h('thead', h('tr', h('th', 'Katman'), h('th', 'z'), h('th', 'Boyut'), h('th', 'Dosya'), h('th', 'Arka plan'))),
           h('tbody', layers.map(([n, l]) => h('tr',
-            h('td', h('code', n)), h('td', String(l.z)), h('td', `${l.w}×${l.h} px`), h('td', `${l.file} · ${l.kb} KB`), h('td', BG[l.background] ?? l.background))))) : null,
+            h('td', h('code', n)), h('td', String(l.z)), h('td', `${l.w}×${l.h} px`), h('td', `${l.file} · ${l.kb} KB`), h('td', (BG[l.background] ?? l.background) + keyText(l.key)))))) : null,
         rep.warnings.length ? h('div.warn-box', h('strong', 'Uyarılar'), h('ul', rep.warnings.map((w) => h('li', w)))) : h('p.ok', 'Uyarı yok.'),
         h('p.files', 'Dosyalar: ',
           ['manifest.json', 'report.json', 'preview.html'].map((f) => [h('a', { href: fileUrl(dir, `${base}/${f}`), target: '_blank', rel: 'noopener' }, f), ' ']),

@@ -10,7 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { addClient, broadcast, logged, runJob } from './lib/events.mjs';
 import { exportPackage } from './lib/export.mjs';
 import { ffmpegTools } from './lib/frames.mjs';
-import { inspectPose, setRange } from './lib/inspect.mjs';
+import { inspectPose, keyPreview, setRange } from './lib/inspect.mjs';
 import { info, logError, setLogSource, UserError } from './lib/log.mjs';
 import { make } from './lib/make.mjs';
 import { createItem, listTemplates } from './lib/plan.mjs';
@@ -271,6 +271,13 @@ route('GET', /^\/api\/items\/([^/]+)\/poses\/([a-z0-9_]+)\/measure$/, ({ url, di
     if (!(await poseClip(item, p))) throw new HttpError(400, `${p.name} has no video yet`);
     return measureLocomotion(item, p, range);
   }, { quiet: true });
+});
+
+// Background removal settings tried on one image or frame: { pose } or { image }, and { key }.
+route('POST', /^\/api\/items\/([^/]+)\/key-preview$/, async ({ req, dir }) => {
+  const body = await readJson(req);
+  if (typeof body.pose !== 'string' && typeof body.image !== 'string') throw new HttpError(400, 'expected { "pose": … } or { "image": … } with "key"');
+  return runJob(dir, 'key preview', () => keyPreview(loadAt(dir), body), { quiet: true });
 });
 
 route('POST', /^\/api\/items\/([^/]+)\/make$/, ({ dir }) => runJob(dir, 'make package', async () => {
